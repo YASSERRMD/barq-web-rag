@@ -9,8 +9,18 @@ import {
     pipeline,
     TextStreamer,
     InterruptableStoppingCriteria,
+    env,
     type TextGenerationPipeline,
 } from '@huggingface/transformers';
+
+// Configure ONNX WASM settings to allow larger memory allocations.
+// This prevents the '10787880' memory error on Chrome for some WebGPU buffers.
+env.allowLocalModels = false;
+if (env.backends.onnx.wasm) {
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+}
+
 import { ThinkStreamParser, type ThinkDelta } from '../lib/thinkParser';
 import {
     LLMContext,
