@@ -21,4 +21,9 @@ export default defineConfig({
     optimizeDeps: {
         exclude: ['@huggingface/transformers'],
     },
+    build: {
+        rollupOptions: {
+            external: ['/barq-vweb-pkg/barq_vweb.js'],
+        },
+    },
 })
