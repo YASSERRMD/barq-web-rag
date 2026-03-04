@@ -1,6 +1,5 @@
 /**
- * useDocumentIngestion.ts — React hook that manages the full pipeline:
- * File → parse text → chunk → insert into barq-vweb vector DB.
+ * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-vweb store.
  */
 
 import { useState, useCallback } from 'react';
@@ -35,7 +34,8 @@ export function useDocumentIngestion() {
         if (dbReady) return;
         setStatus({ state: 'initialising' });
         await initDb();
-        setBackendInfo(getBackendInfo());
+        // backendInfo shows all three modules: barq-vweb + barq-wasm + MiniLM embedder
+        setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD | MiniLM-L6-v2`);
         setDbReady(true);
     }, [dbReady]);
 
