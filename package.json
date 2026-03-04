@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
+    "highlight.js": "^11.11.1",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.8.0",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

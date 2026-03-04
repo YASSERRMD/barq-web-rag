@@ -475,3 +475,75 @@ code {
   border: none;
   margin: 0;
 }
+/* ===== Markdown prose (AI messages) ===== */
+.msg-content { line-height: 1.7; }
+
+.msg-content h1,
+.msg-content h2,
+.msg-content h3,
+.msg-content h4 {
+  margin: 0.9em 0 0.3em;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.msg-content h1 { font-size: 1.2em; }
+.msg-content h2 { font-size: 1.1em; }
+.msg-content h3 { font-size: 1.0em; }
+
+.msg-content p { margin: 0.45em 0; }
+.msg-content p:first-child { margin-top: 0; }
+.msg-content p:last-child  { margin-bottom: 0; }
+
+.msg-content ul,
+.msg-content ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.msg-content li { margin: 0.2em 0; }
+
+.msg-content blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 0.6em 0;
+  padding: 0.25em 0.8em;
+  background: var(--bg-card);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-secondary);
+}
+
+.msg-content table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85em;
+  margin: 0.6em 0;
+}
+.msg-content th,
+.msg-content td {
+  border: 1px solid var(--border);
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.msg-content th {
+  background: var(--bg-card);
+  font-weight: 600;
+}
+
+.msg-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+/* Inline code */
+.inline-code {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 0.82em;
+  color: var(--accent);
+}
+
+/* Override highlight.js background */
+.hljs { background: var(--bg-base) !important; }
