@@ -1,0 +1,15 @@
+{
+  "name": "barq-vweb",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "barq_vweb_bg.wasm",
+    "barq_vweb.js",
+    "barq_vweb.d.ts"
+  ],
+  "main": "barq_vweb.js",
+  "types": "barq_vweb.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
