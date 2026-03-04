@@ -19,6 +19,8 @@ export interface ChunkMeta {
 let wasmInstance: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
+const metadataStore = new Map<number, ChunkMeta>();
+let nextVectorId = 0;
 
 /** Initialise the barq-vweb WASM module. Safe to call multiple times. */
 export async function initDb(): Promise<void> {
@@ -26,12 +28,11 @@ export async function initDb(): Promise<void> {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        // @ts-ignore
-        const mod = await import(/* @vite-ignore */ '/barq-vweb-pkg/barq_vweb.js');
-        // Initialise WASM binary
-        await mod.default('/barq-vweb-pkg/barq_vweb_bg.wasm');
+        const mod = await import('barq-vweb');
+        // Initialise WASM binary (default export is the wasm-bindgen init fn)
+        await (mod as any).default();
         // Create the BarqVWeb collection
-        wasmInstance = new mod.BarqVWeb('rag-session', null);
+        wasmInstance = new (mod as any).BarqVWeb('rag-session', null);
         isInitialised = true;
         console.log('[barq-vweb] initialised —', wasmInstance.backend_info());
     })();
@@ -54,11 +55,23 @@ export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
     const texts = metas.map((m) => m.text);
     const metaPayloads = metas.map((m) => ({ sourceFile: m.sourceFile, chunkIndex: m.chunkIndex, text: m.text }));
 
-    const result = await wasmInstance.insert_texts(texts, metaPayloads);
-    // Result may be a JSON string or number
-    if (typeof result === 'string') {
-        try { const parsed = JSON.parse(result); return parsed?.count ?? wasmInstance.count(); } catch { /* ignore */ }
+    try {
+        const result = await wasmInstance.insert_texts(texts, metaPayloads);
+
+        // Store metadata locally in JS mapping since WASM currently discards the JSON payload
+        for (let i = 0; i < metas.length; i++) {
+            metadataStore.set(nextVectorId + i, metas[i]);
+        }
+        nextVectorId += metas.length;
+
+        // The Rust WASM bindings return the number of inserted texts as an f64
+        if (typeof result === 'number') {
+            return wasmInstance.count();
+        }
+    } catch (e) {
+        console.error('[vectorDb] Failed to insert chunks:', e);
     }
+
     return wasmInstance.count();
 }
 
@@ -77,18 +90,25 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
         try { results = JSON.parse(raw); } catch { results = []; }
     }
 
-    return results.map((r: any) => ({
-        id: r.id ?? 0,
-        score: r.score ?? 0,
-        text: r.text,
-        metadata: r.metadata as ChunkMeta | undefined,
-    }));
+    return results.map((r: any) => {
+        const id = r.id ?? 0;
+        const meta = metadataStore.get(id);
+
+        return {
+            id,
+            score: r.score ?? 0,
+            text: meta?.text ?? '',
+            metadata: meta,
+        };
+    });
 }
 
 /** Clear all stored vectors. Returns the new count (always 0). */
 export async function clearDb(): Promise<void> {
     ensureInit();
     await wasmInstance.clear();
+    metadataStore.clear();
+    nextVectorId = 0;
 }
 
 /** Number of vectors currently stored. */

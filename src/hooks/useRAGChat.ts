@@ -48,7 +48,7 @@ export function useRAGChat() {
                 try {
                     const results = await searchSimilar(userText, TOP_K);
                     sources = results
-                        .filter((r) => r.score > 0.1)
+                        .filter((r) => r.score > 0.05)
                         .map((r) => ({
                             text: r.metadata?.text ?? r.text ?? '',
                             sourceFile: r.metadata?.sourceFile ?? 'unknown',

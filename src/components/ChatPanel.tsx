@@ -3,7 +3,10 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { Send, Square, Plus, ChevronDown, ChevronUp, BookOpen } from 'lucide-react';
+import { Send, Square, Plus, ChevronDown, ChevronUp, BookOpen, Copy, Check } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github.css';
 import { useRAGChat } from '../hooks/useRAGChat';
 import { StatusBar } from './StatusBar';
 import type { ChatMessage, SourceChunk } from '../hooks/LLMContext';
@@ -20,8 +23,8 @@ function ReasoningBlock({ text }: { text: string }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.4rem',
-                    background: 'rgba(124,58,237,0.08)',
-                    border: '1px solid rgba(124,58,237,0.2)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '0.3rem 0.7rem',
                     cursor: 'pointer',
@@ -38,8 +41,8 @@ function ReasoningBlock({ text }: { text: string }) {
                     className="animate-fade-in"
                     style={{
                         marginTop: '0.4rem',
-                        background: 'rgba(124,58,237,0.04)',
-                        border: '1px solid rgba(124,58,237,0.12)',
+                        background: 'var(--bg-card-hover)',
+                        border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-sm)',
                         padding: '0.75rem',
                         fontSize: '0.78rem',
@@ -67,8 +70,8 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.35rem',
-                    background: 'rgba(37,99,235,0.08)',
-                    border: '1px solid rgba(37,99,235,0.2)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '0.25rem 0.6rem',
                     cursor: 'pointer',
@@ -90,8 +93,8 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                         <div
                             key={i}
                             style={{
-                                background: 'rgba(37,99,235,0.05)',
-                                border: '1px solid rgba(37,99,235,0.12)',
+                                background: 'var(--bg-base)',
+                                border: '1px solid var(--border)',
                                 borderRadius: 'var(--radius-sm)',
                                 padding: '0.5rem 0.75rem',
                                 fontSize: '0.75rem',
@@ -107,6 +110,57 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                     ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+/* ===== Code block with copy button ===== */
+function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
+    const [copied, setCopied] = useState(false);
+    const code = String(children).replace(/\n$/, '');
+    const handleCopy = () => {
+        navigator.clipboard.writeText(code).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1800);
+        });
+    };
+    return (
+        <div style={{ position: 'relative', margin: '0.6rem 0' }}>
+            <button
+                onClick={handleCopy}
+                title="Copy code"
+                style={{
+                    position: 'absolute',
+                    top: '0.45rem',
+                    right: '0.5rem',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '0.2rem 0.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    zIndex: 1,
+                }}
+            >
+                {copied ? <Check size={11} /> : <Copy size={11} />}
+                {copied ? 'Copied!' : 'Copy'}
+            </button>
+            <pre className={className} style={{
+                margin: 0,
+                padding: '1rem 1rem 0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                overflowX: 'auto',
+                fontSize: '0.8rem',
+                lineHeight: 1.6,
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border)',
+            }}>
+                <code className={className}>{children}</code>
+            </pre>
         </div>
     );
 }
@@ -148,15 +202,34 @@ function MessageBubble({
 
                 {/* Content */}
                 <div
+                    className={`msg-content${isStreaming && !msg.content ? ' cursor-blink' : ''}`}
                     style={{
                         fontSize: '0.9rem',
                         color: isUser ? '#fff' : 'var(--text-primary)',
                         lineHeight: 1.7,
-                        whiteSpace: 'pre-wrap',
                     }}
-                    className={isStreaming && !msg.content ? 'cursor-blink' : ''}
                 >
-                    {msg.content || (isStreaming ? '' : '…')}
+                    {isUser ? (
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                    ) : (
+                        <ReactMarkdown
+                            rehypePlugins={[rehypeHighlight]}
+                            components={{
+                                code({ className, children, ...props }: any) {
+                                    const isBlock = !!(props.node?.position?.start.line !== props.node?.position?.end.line || String(children).includes('\n'));
+                                    if (isBlock) {
+                                        return <CodeBlock className={className}>{children}</CodeBlock>;
+                                    }
+                                    return <code className="inline-code" {...props}>{children}</code>;
+                                },
+                                pre({ children }: any) {
+                                    return <>{children}</>;
+                                },
+                            }}
+                        >
+                            {msg.content || (isStreaming ? '…' : '…')}
+                        </ReactMarkdown>
+                    )}
                     {isStreaming && msg.content && <span className="cursor-blink" />}
                 </div>
 

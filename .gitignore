@@ -4,6 +4,7 @@ tmp/
 # Node
 node_modules/
 dist/
+publish/
 .env
 .env.local
 
