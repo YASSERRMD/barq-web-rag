@@ -99,10 +99,10 @@ export function LLMProvider({ children }: { children: ReactNode }) {
             let tokenCount = 0;
             let firstTokenTime = 0;
 
-            const assistantIdx = chatHistory.length;
+            const assistantId = createMessageId();
             setMessages((prev) => [
                 ...prev,
-                { id: createMessageId(), role: 'assistant', content: '', reasoning: '', sources },
+                { id: assistantId, role: 'assistant', content: '', reasoning: '', sources },
             ]);
 
             const streamer = new TextStreamer((generator as any).tokenizer, {
@@ -114,7 +114,10 @@ export function LLMProvider({ children }: { children: ReactNode }) {
                     if (deltas.length === 0) return;
                     setMessages((prev) => {
                         const updated = [...prev];
-                        updated[assistantIdx] = applyDeltas(updated[assistantIdx], deltas);
+                        const idx = updated.findIndex(m => m.id === assistantId);
+                        if (idx !== -1) {
+                            updated[idx] = applyDeltas(updated[idx], deltas);
+                        }
                         return updated;
                     });
                 },
@@ -146,18 +149,24 @@ export function LLMProvider({ children }: { children: ReactNode }) {
             if (remaining.length > 0) {
                 setMessages((prev) => {
                     const updated = [...prev];
-                    updated[assistantIdx] = applyDeltas(updated[assistantIdx], remaining);
+                    const idx = updated.findIndex(m => m.id === assistantId);
+                    if (idx !== -1) {
+                        updated[idx] = applyDeltas(updated[idx], remaining);
+                    }
                     return updated;
                 });
             }
 
             setMessages((prev) => {
                 const updated = [...prev];
-                updated[assistantIdx] = {
-                    ...updated[assistantIdx],
-                    content: parser.content.trim() || prev[assistantIdx].content,
-                    reasoning: parser.reasoning.trim() || prev[assistantIdx].reasoning,
-                };
+                const idx = updated.findIndex(m => m.id === assistantId);
+                if (idx !== -1) {
+                    updated[idx] = {
+                        ...updated[idx],
+                        content: parser.content.trim() || updated[idx].content,
+                        reasoning: parser.reasoning.trim() || updated[idx].reasoning,
+                    };
+                }
                 return updated;
             });
 
