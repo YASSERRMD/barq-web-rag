@@ -10,10 +10,11 @@ import { useDocumentIngestion } from '../hooks/useDocumentIngestion';
 import { UploadPanel } from './UploadPanel';
 import { ChatPanel } from './ChatPanel';
 
-function LandingScreen({ onStart, isLoading, progress }: {
+function LandingScreen({ onStart, isLoading, progress, error }: {
     onStart: () => void;
     isLoading: boolean;
     progress?: number;
+    error?: string;
 }) {
     return (
         <div
@@ -76,6 +77,25 @@ function LandingScreen({ onStart, isLoading, progress }: {
                 ))}
             </div>
 
+            {/* Error Message */}
+            {error && (
+                <div
+                    style={{
+                        background: 'rgba(239,68,68,0.1)',
+                        border: '1px solid rgba(239,68,68,0.3)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '1rem',
+                        color: 'var(--red)',
+                        maxWidth: '480px',
+                        fontSize: '0.9rem',
+                        textAlign: 'left',
+                    }}
+                >
+                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>⚠ Failed to load model</strong>
+                    {error}
+                </div>
+            )}
+
             {/* CTA */}
             {isLoading ? (
                 <div className="flex flex-col items-center gap-3" style={{ width: '100%', maxWidth: '280px' }}>
@@ -88,7 +108,7 @@ function LandingScreen({ onStart, isLoading, progress }: {
             ) : (
                 <button id="load-model-btn" className="btn btn-primary" onClick={onStart} style={{ padding: '0.75rem 2rem', fontSize: '1rem' }}>
                     <Zap size={18} />
-                    Load Model &amp; Start
+                    {error ? 'Retry Loading Model' : 'Load Model & Start'}
                 </button>
             )}
 
@@ -110,6 +130,7 @@ export function AppShell() {
     const isLoading = hasStarted && status.state === 'loading';
     const isReady = status.state === 'ready';
     const loadProgress = status.state === 'loading' ? (status.progress ?? 0) : 0;
+    const errorMsg = status.state === 'error' ? status.error : undefined;
 
     useEffect(() => {
         if (isReady && hasStarted) {
@@ -129,7 +150,7 @@ export function AppShell() {
     if (!showApp) {
         return (
             <div style={{ height: '100vh', width: '100vw', background: 'var(--bg-base)' }}>
-                <LandingScreen onStart={handleStart} isLoading={isLoading} progress={loadProgress} />
+                <LandingScreen onStart={handleStart} isLoading={isLoading} progress={loadProgress} error={errorMsg} />
             </div>
         );
     }
