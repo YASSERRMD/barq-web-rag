@@ -1,0 +1,15 @@
+{
+  "name": "barq-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "barq_wasm_bg.wasm",
+    "barq_wasm.js",
+    "barq_wasm.d.ts"
+  ],
+  "main": "barq_wasm.js",
+  "types": "barq_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
