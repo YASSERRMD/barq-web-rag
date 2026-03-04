@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
+    "barq-vweb": "file:public/barq-vweb-pkg",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.8.0",

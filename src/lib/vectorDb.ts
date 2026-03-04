@@ -28,12 +28,11 @@ export async function initDb(): Promise<void> {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        // @ts-ignore
-        const mod = await import(/* @vite-ignore */ '/barq-vweb-pkg/barq_vweb.js');
-        // Initialise WASM binary
-        await mod.default('/barq-vweb-pkg/barq_vweb_bg.wasm');
+        const mod = await import('barq-vweb');
+        // Initialise WASM binary (default export is the wasm-bindgen init fn)
+        await (mod as any).default();
         // Create the BarqVWeb collection
-        wasmInstance = new mod.BarqVWeb('rag-session', null);
+        wasmInstance = new (mod as any).BarqVWeb('rag-session', null);
         isInitialised = true;
         console.log('[barq-vweb] initialised —', wasmInstance.backend_info());
     })();
