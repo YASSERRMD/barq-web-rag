@@ -20,8 +20,8 @@ function ReasoningBlock({ text }: { text: string }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.4rem',
-                    background: 'rgba(124,58,237,0.08)',
-                    border: '1px solid rgba(124,58,237,0.2)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '0.3rem 0.7rem',
                     cursor: 'pointer',
@@ -38,8 +38,8 @@ function ReasoningBlock({ text }: { text: string }) {
                     className="animate-fade-in"
                     style={{
                         marginTop: '0.4rem',
-                        background: 'rgba(124,58,237,0.04)',
-                        border: '1px solid rgba(124,58,237,0.12)',
+                        background: 'var(--bg-card-hover)',
+                        border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-sm)',
                         padding: '0.75rem',
                         fontSize: '0.78rem',
@@ -67,8 +67,8 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.35rem',
-                    background: 'rgba(37,99,235,0.08)',
-                    border: '1px solid rgba(37,99,235,0.2)',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '0.25rem 0.6rem',
                     cursor: 'pointer',
@@ -90,8 +90,8 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                         <div
                             key={i}
                             style={{
-                                background: 'rgba(37,99,235,0.05)',
-                                border: '1px solid rgba(37,99,235,0.12)',
+                                background: 'var(--bg-base)',
+                                border: '1px solid var(--border)',
                                 borderRadius: 'var(--radius-sm)',
                                 padding: '0.5rem 0.75rem',
                                 fontSize: '0.75rem',

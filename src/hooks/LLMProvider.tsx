@@ -109,8 +109,9 @@ export function LLMProvider({ children }: { children: ReactNode }) {
                 skip_prompt: true,
                 skip_special_tokens: false,
                 callback_function: (output: string) => {
-                    if (output === '<|im_end|>') return;
-                    const deltas = parser.push(output);
+                    const cleaned = output.replace(/<\|im_end\|>/g, '');
+                    if (!cleaned) return;
+                    const deltas = parser.push(cleaned);
                     if (deltas.length === 0) return;
                     setMessages((prev) => {
                         const updated = [...prev];

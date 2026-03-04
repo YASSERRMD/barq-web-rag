@@ -71,16 +71,20 @@ export function useDocumentIngestion() {
                 // Step 1: Parse
                 setStatus({ state: 'parsing', fileName: file.name });
                 const text = await parseFile(file);
+                console.log(`[Ingestion] Parsed ${file.name}, text length: ${text.length}`);
 
                 // Step 2: Chunk
                 const chunks = chunkText(text, file.name);
+                console.log(`[Ingestion] Chunked into ${chunks.length} chunks.`);
 
                 // Step 3: Embed & insert in batches of 50
                 const BATCH = 50;
                 let inserted = 0;
                 for (let i = 0; i < chunks.length; i += BATCH) {
                     const batch = chunks.slice(i, i + BATCH);
+                    console.log(`[Ingestion] Inserting batch ${i} to ${i + batch.length}...`);
                     await insertChunks(batch);
+                    console.log(`[Ingestion] Batch inserted.`);
                     inserted += batch.length;
                     setStatus({
                         state: 'embedding',

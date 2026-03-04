@@ -27,7 +27,7 @@ function LandingScreen({ onStart, isLoading, progress, error }: {
                     style={{
                         position: 'absolute',
                         inset: '-24px',
-                        background: 'radial-gradient(circle, rgba(124,58,237,0.25) 0%, transparent 70%)',
+                        background: 'radial-gradient(circle, var(--accent-glow) 0%, transparent 70%)',
                         borderRadius: '50%',
                     }}
                 />
