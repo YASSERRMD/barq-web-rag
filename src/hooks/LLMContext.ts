@@ -30,7 +30,7 @@ export interface LLMContextValue {
     isGenerating: boolean;
     tps: number;
     loadModel: () => void;
-    send: (text: string) => void;
+    send: (text: string, augmentedHistory?: ChatMessage[], sources?: SourceChunk[]) => void;
     stop: () => void;
     clearChat: () => void;
 }

@@ -39,7 +39,7 @@ function FileRow({ file }: { file: IngestionFile }) {
             <div style={{ flexShrink: 0 }}>
                 {file.status === 'processing' && <Loader2 size={14} className="animate-spin" style={{ color: 'var(--amber)' }} />}
                 {file.status === 'done' && <CheckCircle size={14} style={{ color: 'var(--green)' }} />}
-                {file.status === 'error' && <XCircle size={14} style={{ color: 'var(--red)' }} title={file.error} />}
+                {file.status === 'error' && <span title={file.error}><XCircle size={14} style={{ color: 'var(--red)' }} /></span>}
             </div>
         </div>
     );

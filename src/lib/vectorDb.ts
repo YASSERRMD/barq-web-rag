@@ -26,7 +26,7 @@ export async function initDb(): Promise<void> {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        // Dynamic import of the WASM module served from /barq-vweb-pkg/
+        // @ts-ignore
         const mod = await import(/* @vite-ignore */ '/barq-vweb-pkg/barq_vweb.js');
         // Initialise WASM binary
         await mod.default('/barq-vweb-pkg/barq_vweb_bg.wasm');
