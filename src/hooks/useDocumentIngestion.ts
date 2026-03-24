@@ -1,5 +1,5 @@
 /**
- * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-vweb store.
+ * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-mesh-web store.
  */
 
 import { useState, useCallback, useContext, useEffect } from 'react';
@@ -44,7 +44,7 @@ export function useDocumentIngestion() {
         if (dbReady) return;
         setStatus({ state: 'initialising' });
         await initDb();
-        // backendInfo shows all three modules: barq-vweb + barq-wasm + MiniLM embedder
+        // backendInfo shows the mesh store, SIMD compute, and MiniLM embedder
         setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD | MiniLM-L6-v2`);
         setDbReady(true);
     }, [dbReady]);
@@ -92,10 +92,9 @@ export function useDocumentIngestion() {
                 const chunks = chunkText(text, file.name);
                 console.log(`[Ingestion] Chunked into ${chunks.length} chunks.`);
 
-                // Step 3: Embed & insert all chunks in parallel.
-                // We no longer batch serially here; the vectorDb handles parallel distribution.
+                // Step 3: Batch embed and insert through the mesh backend.
                 setStatus({ state: 'embedding', fileName: file.name, progress: 0 });
-                console.log(`[Ingestion] Inserting ${chunks.length} chunks in parallel...`);
+                console.log(`[Ingestion] Inserting ${chunks.length} chunks via barq-mesh-web...`);
                 await insertChunks(chunks, (progress) => {
                     setStatus({
                         state: 'embedding',
