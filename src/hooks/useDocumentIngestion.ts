@@ -43,14 +43,7 @@ export function useDocumentIngestion() {
         const fileArray = Array.from(newFiles);
         if (fileArray.length === 0) return;
 
-        try {
-            await ensureDb();
-        } catch (e: any) {
-            setStatus({ state: 'error', error: `DB init failed: ${e?.message ?? e}` });
-            return;
-        }
-
-        // Add files to the list with "pending" status
+        // Add files to the list with "pending" status IMMEDIATELY for feedback
         setFiles((prev) => [
             ...prev,
             ...fileArray.map((f) => ({
@@ -60,6 +53,18 @@ export function useDocumentIngestion() {
                 status: 'pending' as const,
             })),
         ]);
+
+        try {
+            await ensureDb();
+        } catch (e: any) {
+            const errorMsg = `DB init failed: ${e?.message ?? e}`;
+            setStatus({ state: 'error', error: errorMsg });
+            // Mark all pending files as error
+            setFiles((prev) => 
+                prev.map(f => f.status === 'pending' ? { ...f, status: 'error', error: errorMsg } : f)
+            );
+            return;
+        }
 
         for (const file of fileArray) {
             // Mark as processing

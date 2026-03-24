@@ -65,11 +65,12 @@ export function LLMProvider({ children }: { children: ReactNode }) {
                     dtype: DTYPE,
                     device: 'webgpu',
                     progress_callback: (p: any) => {
-                        if (p.status !== 'progress' || !p.file?.endsWith('.onnx_data')) return;
+                        if (p.status !== 'progress') return;
+                        // Use actual progress even if not the largest file, to show UI is alive
                         setStatus({
                             state: 'loading',
                             progress: p.progress,
-                            message: `Downloading model… ${Math.round(p.progress)}%`,
+                            message: `Downloading model: ${p.file ?? ''}… ${Math.round(p.progress)}%`,
                         });
                     },
                 });

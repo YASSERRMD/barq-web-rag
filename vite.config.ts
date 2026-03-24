@@ -2,10 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
+import { resolve } from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [wasm(), topLevelAwait(), react()],
+    resolve: {
+        alias: {
+            // Map dependencies used by barq-mesh-web submodule to the root public packages
+            'barq-vweb': resolve(__dirname, 'public/barq-vweb-pkg'),
+            'barq-wasm': resolve(__dirname, 'public/barq-wasm-pkg'),
+        },
+    },
     server: {
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',

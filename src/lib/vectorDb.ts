@@ -77,7 +77,9 @@ export async function insertChunksParallel(
 
     const workerPromises = Array.from({ length: numWorkers }).map((_, i) => {
         return new Promise<Float32Array[]>((resolve, reject) => {
-            const worker = new WorkerModule.default();
+            // Handle both WorkerModule.default (Vite dynamic import) and WorkerModule
+            const WorkerCtor = WorkerModule.default || WorkerModule;
+            const worker = new WorkerCtor();
             workers.push(worker);
 
             const startIdx = i * chunksPerWorker;
@@ -93,8 +95,8 @@ export async function insertChunksParallel(
             worker.onmessage = (e: MessageEvent) => {
                 const data = e.data;
                 if (data.type === 'progress') {
-                    // Approximate progress
-                    totalCompleted += 5; // e.g. chunk batch
+                    // Approximate progress tracking
+                    totalCompleted += 1;
                     onProgress(Math.min(totalCompleted / texts.length, 1));
                 } else if (data.type === 'done') {
                     resolve(data.results);
@@ -109,11 +111,22 @@ export async function insertChunksParallel(
         });
     });
 
-    const results = await Promise.all(workerPromises);
+    let results: Float32Array[][] = [];
+    try {
+        results = await Promise.all(workerPromises);
+    } catch (e: any) {
+        console.error('[vectorDb] Worker pool failed:', e);
+        workers.forEach(w => w.terminate());
+        throw e;
+    }
+    
     const allEmbeddings = results.flat();
+    console.log(`[vectorDb] All workers finished. Total embeddings: ${allEmbeddings.length} / ${metas.length}`);
 
-    const flatVec = new Float32Array(metas.length * EMBED_DIM);
-    const ids = new Uint32Array(metas.length);
+    if (allEmbeddings.length === 0) return getCount();
+
+    const flatVec = new Float32Array(allEmbeddings.length * EMBED_DIM);
+    const ids = new Uint32Array(allEmbeddings.length);
 
     for (let i = 0; i < allEmbeddings.length; i++) {
         const id = nextId + i;
@@ -124,8 +137,9 @@ export async function insertChunksParallel(
 
     try {
         // Upsert via barq-mesh-web (handles normalize + vweb indexing in WASM!)
-        await meshStore.upsert_vectors(flatVec, ids, EMBED_DIM);
-        nextId += metas.length;
+        const updatedCount = await meshStore.upsert_vectors(flatVec, ids);
+        console.log(`[vectorDb] Successfully upserted to WASM store. New count: ${updatedCount}`);
+        nextId += allEmbeddings.length;
     } catch (e) {
         console.error('[vectorDb] upsert_vectors failed:', e);
     }
@@ -140,7 +154,10 @@ export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
 
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
-    if (metadataStore.size === 0) return [];
+    if (metadataStore.size === 0) {
+        console.log('[vectorDb] Search skipped: metadataStore is empty.');
+        return [];
+    }
 
     // Embed the query in the main thread (fast enough for one sentence)
     const queryVec = await embedText(query);
@@ -149,18 +166,23 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
     const rawStr = await meshStore.search_vector(queryVec, topK);
 
     let results: Array<{ id: number; score: number }> = [];
-    try { results = JSON.parse(rawStr); } catch { results = []; }
+    try { 
+        results = JSON.parse(rawStr); 
+    } catch { 
+        console.warn('[vectorDb] Failed to parse search results:', rawStr);
+        results = []; 
+    }
 
     const mod = await import('barq-mesh-web');
 
     // Mapped results with re-rank tracking
     const mapped = results
         .map((r: any) => {
-            const id = r.id ?? 0;
+            const id = r.id;
             const meta = metadataStore.get(id);
             if (!meta) return null;
             
-            // Re-rank using barq-mesh-web's native SIMD exported function
+            // Re-verify score using barq-mesh-web's native SIMD exported function
             const score = mod.cosine_similarity_simd(queryVec, meta.vector);
             return { id, score, text: meta.text, metadata: meta };
         })
