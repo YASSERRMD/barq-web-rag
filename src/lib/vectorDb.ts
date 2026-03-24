@@ -2,7 +2,7 @@
  * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
  *
  * Hot path:
- * - deterministic batch embed in JS
+ * - real MiniLM embeddings in a background worker
  * - insert vectors through barq-mesh-web with explicit IDs
  * - search natively through barq-mesh-web
  */
@@ -65,7 +65,9 @@ export async function initDb(): Promise<void> {
 
             isInitialised = true;
             console.log('[vectorDb] barq-mesh-web ready.');
-            initEmbedder().catch(() => {});
+            initEmbedder().catch((e) => {
+                console.warn('[vectorDb] embedder warmup failed:', e);
+            });
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
             throw e;
@@ -82,7 +84,7 @@ function ensureInit() {
 }
 
 /**
- * Fast ingestion using deterministic JS embeddings and native barq-mesh-web indexing.
+ * Fast ingestion using worker-backed semantic embeddings and native barq-mesh-web indexing.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -96,7 +98,9 @@ export async function insertChunks(
     console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
 
     try {
-        onProgress(0.05);
+        onProgress(0.02);
+        await initEmbedder();
+        onProgress(0.08);
 
         const total = metas.length;
         let processed = 0;
@@ -140,21 +144,14 @@ export async function insertChunks(
 }
 
 /**
- * Fast native retrieval using barq-mesh-web's native hybrid search.
+ * Semantic retrieval using barq-mesh-web's native vector search.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     if (!dbStore || metadataStore.size === 0) return [];
 
     console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
-    let raw: unknown;
-
-    try {
-        raw = await dbStore.retrieve_hybrid(query, topK);
-    } catch (err) {
-        console.warn('[vectorDb] Native hybrid retrieval failed, falling back to vector search:', err);
-        const queryVec = await embedText(query);
-        raw = await dbStore.search_vector(queryVec, topK);
-    }
+    const queryVec = await embedText(query);
+    const raw = await dbStore.search_vector(queryVec, topK);
 
     const results = normalizeSearchResults(raw);
 
@@ -183,7 +180,7 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${dbStore?.backend_info?.() ?? 'Inactive'} | barq-mesh-web native search`;
+    return `${dbStore?.backend_info?.() ?? 'Inactive'} | worker embeddings`;
 }
 
 function normalizeSearchResults(raw: unknown): NativeSearchResult[] {

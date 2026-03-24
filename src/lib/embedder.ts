@@ -1,116 +1,238 @@
 /**
- * embedder.ts - Lightweight deterministic embeddings used by barq-mesh-web.
+ * embedder.ts - Worker-backed semantic embeddings for barq-mesh-web.
  *
- * This mirrors the native stub embedder used in the mesh/vweb WASM layer so
- * ingestion and retrieval stay fast and consistent without a transformer model
- * on the hot path.
+ * The app keeps barq-mesh-web as the vector store/search layer, but the actual
+ * embeddings come from the real MiniLM model running in a background worker.
+ * That keeps retrieval semantically correct without putting model inference on
+ * the UI thread.
  */
 
-import { initBarqWasm, normalizeVector } from './barqWasm';
-
 export const EMBED_DIM = 384;
-const MAX_SEQ_LEN = 128;
 
-const CLS_ID = 101;
-const SEP_ID = 102;
-const UNK_ID = 100;
-const PAD_ID = 0;
+const MODEL_WORKER_URL = new URL('../workers/embed.worker.ts', import.meta.url);
+const MAX_BATCH_SIZE = 16;
+const WORKER_COUNT = getWorkerCount();
 
-const VOCAB = new Map<string, number>();
+type WorkerResponse =
+    | { id: number; type: 'ready' }
+    | { id: number; type: 'done'; results: Float32Array[] }
+    | { id: number; type: 'progress'; progress: number; file?: string }
+    | { id: number; type: 'error'; error: string };
 
-let embedReady = false;
-let initPromise: Promise<void> | null = null;
+type PendingJob = {
+    resolve: (vectors: Float32Array[]) => void;
+    reject: (error: unknown) => void;
+};
 
-function buildStubVocab(): void {
-    if (VOCAB.size > 0) return;
+class EmbedWorkerClient {
+    private readonly worker: Worker;
+    private readonly pending = new Map<number, PendingJob>();
+    private readonly readyPromise: Promise<void>;
+    private readyResolve: (() => void) | null = null;
+    private readyReject: ((error: unknown) => void) | null = null;
+    private nextMessageId = 1;
+    private tail: Promise<void> = Promise.resolve();
 
-    for (const [i, c] of Array.from('abcdefghijklmnopqrstuvwxyz').entries()) {
-        VOCAB.set(c, i + 1000);
-    }
+    constructor(private readonly label: string) {
+        this.worker = new Worker(MODEL_WORKER_URL, { type: 'module' });
 
-    VOCAB.set('[CLS]', CLS_ID);
-    VOCAB.set('[SEP]', SEP_ID);
-    VOCAB.set('[UNK]', UNK_ID);
-    VOCAB.set('[PAD]', PAD_ID);
-}
+        this.readyPromise = new Promise<void>((resolve, reject) => {
+            this.readyResolve = resolve;
+            this.readyReject = reject;
+        });
 
-function tokenize(text: string): number[] {
-    const ids = [CLS_ID];
-    const words = text.split(/\s+/);
+        this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+            const msg = event.data;
 
-    for (const word of words) {
-        if (!word) continue;
-
-        const lower = word.toLowerCase();
-        const direct = VOCAB.get(lower);
-
-        if (direct != null) {
-            ids.push(direct);
-        } else {
-            for (const ch of lower.slice(0, 10)) {
-                ids.push(VOCAB.get(ch) ?? UNK_ID);
+            if (msg.type === 'progress') {
+                const percent = Math.round((msg.progress ?? 0) * 100);
+                const prefix = msg.file ? ` ${msg.file}` : '';
+                console.log(`[embedder:${this.label}]${prefix} ${percent}%`);
+                return;
             }
-        }
 
-        if (ids.length >= MAX_SEQ_LEN - 1) break;
+            if (msg.type === 'ready') {
+                this.readyResolve?.();
+                this.readyResolve = null;
+                this.readyReject = null;
+                return;
+            }
+
+            const pending = this.pending.get(msg.id);
+            if (!pending) return;
+            this.pending.delete(msg.id);
+
+            if (msg.type === 'done') {
+                pending.resolve(msg.results);
+                return;
+            }
+
+            pending.reject(new Error(msg.error));
+        };
+
+        this.worker.onerror = (event: ErrorEvent) => {
+            const error = event.error ?? new Error(event.message || `Embed worker ${this.label} failed`);
+            this.readyReject?.(error);
+            this.readyResolve = null;
+            this.readyReject = null;
+
+            for (const pending of this.pending.values()) {
+                pending.reject(error);
+            }
+            this.pending.clear();
+        };
+
+        this.worker.postMessage({ id: 0, type: 'init' });
     }
 
-    ids.push(SEP_ID);
-    while (ids.length < MAX_SEQ_LEN) ids.push(PAD_ID);
-    return ids;
-}
-
-function embedDeterministic(text: string): Float32Array {
-    const safeText = (text as any).toWellFormed?.() ?? text;
-    const tokenIds = tokenize(safeText);
-    const vec = new Float32Array(EMBED_DIM);
-
-    for (let i = 0; i < tokenIds.length; i++) {
-        const tid = tokenIds[i];
-        const pos = (tid + i) % EMBED_DIM;
-        vec[pos] += 1.0;
+    async ready(): Promise<void> {
+        await this.readyPromise;
     }
 
-    return normalizeVector(vec);
+    run(texts: string[]): Promise<Float32Array[]> {
+        const job = async () => {
+            await this.ready();
+            return new Promise<Float32Array[]>((resolve, reject) => {
+                const id = this.nextMessageId++;
+                this.pending.set(id, { resolve, reject });
+                this.worker.postMessage({ id, texts });
+            });
+        };
+
+        const scheduled = this.tail.then(job, job);
+        this.tail = scheduled.then(
+            () => undefined,
+            () => undefined,
+        );
+        return scheduled;
+    }
+
+    dispose(): void {
+        this.worker.terminate();
+        this.pending.clear();
+        this.readyResolve = null;
+        this.readyReject = null;
+    }
 }
 
-export async function initEmbedder(): Promise<void> {
-    if (embedReady) return;
+let pool: EmbedWorkerClient[] | null = null;
+let initPromise: Promise<void> | null = null;
+let ready = false;
+
+function getWorkerCount(): number {
+    if (typeof navigator === 'undefined') return 1;
+    const cores = navigator.hardwareConcurrency ?? 4;
+    if (cores >= 4) return 2;
+    return 1;
+}
+
+function buildPool(): EmbedWorkerClient[] {
+    const count = WORKER_COUNT;
+    const workers: EmbedWorkerClient[] = [];
+
+    for (let i = 0; i < count; i++) {
+        workers.push(new EmbedWorkerClient(`w${i + 1}`));
+    }
+
+    return workers;
+}
+
+async function ensurePool(): Promise<void> {
+    if (ready && pool) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        await initBarqWasm();
-        buildStubVocab();
-        embedReady = true;
-        console.log('[embedder] Deterministic mesh embedder ready');
+        pool = buildPool();
+        await Promise.all(pool.map((worker) => worker.ready()));
+        ready = true;
+        console.log(`[embedder] MiniLM worker pool ready (${pool.length} worker${pool.length === 1 ? '' : 's'})`);
     })();
 
-    return initPromise;
+    try {
+        await initPromise;
+    } catch (error) {
+        if (pool) {
+            for (const worker of pool) {
+                worker.dispose();
+            }
+        }
+        pool = null;
+        ready = false;
+        throw error;
+    } finally {
+        initPromise = null;
+    }
+}
+
+function toWellFormedText(text: string): string {
+    return (text as any).toWellFormed?.() ?? text;
+}
+
+function splitTexts(texts: string[]): string[][] {
+    if (texts.length <= MAX_BATCH_SIZE) return [texts];
+
+    const batches: string[][] = [];
+    for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) {
+        batches.push(texts.slice(i, i + MAX_BATCH_SIZE));
+    }
+    return batches;
+}
+
+function pickWorker(index: number): EmbedWorkerClient {
+    if (!pool || pool.length === 0) {
+        throw new Error('embedder: call initEmbedder() first');
+    }
+    return pool[index % pool.length];
+}
+
+export async function initEmbedder(): Promise<void> {
+    await ensurePool();
 }
 
 /**
- * Embed a single text string. Returns a unit-normalized Float32Array (384-dim).
+ * Embed a single text string. Returns a 384-dim vector.
  */
 export async function embedText(text: string): Promise<Float32Array> {
-    if (!embedReady) await initEmbedder();
-    return embedDeterministic(text);
+    const results = await embedBatch([text]);
+    const first = results[0];
+    if (!first) throw new Error('embedder: failed to embed text');
+    return first;
 }
 
 /**
- * Embed a batch of texts. Returns normalized Float32Array[] (384-dim each).
+ * Embed a batch of texts using the worker pool. Batches are split into small
+ * chunks so the underlying transformer can process them efficiently.
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
-    if (!embedReady) await initEmbedder();
+    await ensurePool();
+    if (!pool || pool.length === 0) return [];
 
-    const results: Float32Array[] = new Array(texts.length);
-    for (let i = 0; i < texts.length; i++) {
-        results[i] = embedDeterministic(texts[i]);
+    const safeTexts = texts.map(toWellFormedText);
+    const subBatches = splitTexts(safeTexts);
+
+    const jobs = subBatches.map((batch, index) => pickWorker(index).run(batch));
+    const results = await Promise.all(jobs);
+
+    const flattened: Float32Array[] = [];
+    for (const batchResults of results) {
+        flattened.push(...batchResults);
     }
 
-    return results;
+    return flattened;
 }
 
 export function isEmbedderReady(): boolean {
-    return embedReady;
+    return ready;
+}
+
+export async function disposeEmbedder(): Promise<void> {
+    if (pool) {
+        for (const worker of pool) {
+            worker.dispose();
+        }
+    }
+    pool = null;
+    ready = false;
+    initPromise = null;
 }

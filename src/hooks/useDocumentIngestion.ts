@@ -44,8 +44,8 @@ export function useDocumentIngestion() {
         if (dbReady) return;
         setStatus({ state: 'initialising' });
         await initDb();
-        // backendInfo shows the mesh store and SIMD compute path.
-        setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD`);
+        // backendInfo shows the mesh store and the semantic embedding worker.
+        setBackendInfo(`${getBackendInfo()} | MiniLM worker`);
         setDbReady(true);
     }, [dbReady]);
 

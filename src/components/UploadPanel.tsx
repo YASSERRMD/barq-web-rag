@@ -140,7 +140,7 @@ export function UploadPanel({ ingestion, onClearAll }: UploadPanelProps) {
                     <div className="flex flex-col items-center gap-2">
                         <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent-light)' }} />
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            {status.state === 'initialising' && 'Initialising vector DB…'}
+                            {status.state === 'initialising' && 'Initialising vector DB and embedding worker…'}
                             {status.state === 'parsing' && `Parsing ${(status as any).fileName}…`}
                             {status.state === 'embedding' && `Indexing ${(status as any).progress ?? 0}%…`}
                         </p>
