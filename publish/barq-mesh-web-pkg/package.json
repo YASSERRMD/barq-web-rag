@@ -1,0 +1,17 @@
+{
+  "name": "barq-mesh-web",
+  "type": "module",
+  "description": "Browser-native distributed AI agent mesh - Rust/WASM",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "barq_mesh_web_bg.wasm",
+    "barq_mesh_web.js",
+    "barq_mesh_web.d.ts"
+  ],
+  "main": "barq_mesh_web.js",
+  "types": "barq_mesh_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
