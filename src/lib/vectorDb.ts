@@ -33,6 +33,9 @@ let initPromise: Promise<void> | null = null;
 
 // Local mapping for metadata synchronization.
 const metadataStore = new Map<number, ChunkMeta>();
+const DENSE_CANDIDATE_COUNT = 12;
+const MIN_DENSE_SCORE = 0.18;
+const MIN_LEXICAL_SCORE = 0.08;
 
 function yieldToUi(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
@@ -133,18 +136,19 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
     if (!meshStore || meshStore.count?.() === 0) return [];
 
     console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
+    const queryTokens = tokenize(query);
 
     try {
         const queryVector = await embedText(query);
-        const raw = await meshStore.search_vector(queryVector, topK);
-        const denseResults = mapResults(normalizeSearchResults(raw), 'dense');
+        const raw = await meshStore.search_vector(queryVector, Math.max(topK, DENSE_CANDIDATE_COUNT));
+        const denseResults = rerankResults(mapResults(normalizeSearchResults(raw), 'dense'), queryTokens, topK);
         if (denseResults.length > 0) return denseResults;
     } catch (error) {
         console.warn('[vectorDb] Dense retrieval failed, falling back to hybrid search:', error);
     }
 
     const hybridRaw = await meshStore.retrieve_hybrid(query, topK);
-    return mapResults(normalizeSearchResults(hybridRaw), 'hybrid');
+    return rerankResults(mapResults(normalizeSearchResults(hybridRaw), 'hybrid'), queryTokens, topK);
 }
 
 export async function clearDb(): Promise<void> {
@@ -199,4 +203,47 @@ function normalizeScore(score: number, mode: 'dense' | 'hybrid'): number {
     if (!Number.isFinite(score)) return 0;
     if (mode === 'hybrid') return Math.min(score * 60, 0.99);
     return Math.max(0, Math.min(score, 0.99));
+}
+
+function rerankResults(results: SearchResult[], queryTokens: string[], topK: number): SearchResult[] {
+    const reranked = results
+        .map((result) => {
+            const lexicalScore = computeLexicalScore(queryTokens, result.text);
+            const blendedScore = Math.max(
+                result.score * 0.82 + lexicalScore * 0.18,
+                lexicalScore * 0.75,
+            );
+
+            return {
+                ...result,
+                score: blendedScore,
+            };
+        })
+        .filter((result) => {
+            const lexicalScore = computeLexicalScore(queryTokens, result.text);
+            return result.score >= MIN_DENSE_SCORE || lexicalScore >= MIN_LEXICAL_SCORE;
+        })
+        .sort((a, b) => b.score - a.score);
+
+    return reranked.slice(0, topK);
+}
+
+function tokenize(text: string): string[] {
+    return text
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .filter((token) => token.length >= 3);
+}
+
+function computeLexicalScore(queryTokens: string[], text: string): number {
+    if (queryTokens.length === 0 || !text) return 0;
+
+    const textLower = text.toLowerCase();
+    let matched = 0;
+
+    for (const token of queryTokens) {
+        if (textLower.includes(token)) matched++;
+    }
+
+    return matched / queryTokens.length;
 }
