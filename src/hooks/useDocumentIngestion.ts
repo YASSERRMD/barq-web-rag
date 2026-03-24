@@ -52,6 +52,7 @@ export function useDocumentIngestion() {
         });
         // backendInfo shows the native mesh backend.
         setBackendInfo(getBackendInfo());
+        setChunkCount(getCount());
         setDbReady(true);
     }, [dbReady]);
 

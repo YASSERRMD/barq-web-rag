@@ -6,7 +6,7 @@
  * pipeline plus vector store.
  */
 
-const EMBED_DIM = 384;
+import { embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -135,30 +135,16 @@ export async function insertChunks(
     return getCount();
 }
 
-/**
- * Native hybrid retrieval using AiMesh.
- */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    if (!meshStore || metadataStore.size === 0) return [];
+    if (!meshStore) return [];
 
     console.log(`[vectorDb] AiMesh retrieval: "${query}"`);
-    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
 
-    const results = normalizeSearchResults(resultsJson);
+    const denseResults = await searchDense(query, topK);
+    if (denseResults.length > 0) return denseResults;
 
-    return results
-        .map((r) => {
-            const meta = r.metadata ?? metadataStore.get(r.id);
-            if (!meta) return null;
-
-            return {
-                id: r.id,
-                score: Math.min(r.score * 60, 0.99),
-                text: r.text ?? meta.text,
-                metadata: meta,
-            };
-        })
-        .filter(Boolean) as SearchResult[];
+    const hybridResults = normalizeSearchResults(await meshStore.retrieve_hybrid(query, topK));
+    return mapResults(hybridResults, true);
 }
 
 export async function clearDb(): Promise<void> {
@@ -167,7 +153,7 @@ export async function clearDb(): Promise<void> {
 }
 
 export function getCount(): number {
-    return metadataStore.size;
+    return meshStore?.vector_count?.() ?? metadataStore.size;
 }
 
 export function getBackendInfo(): string {
@@ -185,4 +171,37 @@ function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
         }
     }
     return [];
+}
+
+async function searchDense(query: string, topK: number): Promise<SearchResult[]> {
+    try {
+        const queryVec = await embedText(query);
+        const raw = await meshStore.retrieve(JSON.stringify(Array.from(queryVec)), topK);
+        const results = normalizeSearchResults(raw);
+        return mapResults(results, false);
+    } catch (err) {
+        console.warn('[vectorDb] Dense retrieval failed, falling back to hybrid search:', err);
+        return [];
+    }
+}
+
+function mapResults(results: NativeSearchResult[], hybrid: boolean): SearchResult[] {
+    return results
+        .map((r, idx) => {
+            const meta = r.metadata ?? metadataStore.get(r.id);
+            const text = meta?.text ?? r.text ?? '';
+            if (!text) return null;
+
+            return {
+                id: r.id ?? idx,
+                score: hybrid ? Math.min(r.score * 60, 0.99) : r.score,
+                text,
+                metadata: meta ?? {
+                    sourceFile: 'unknown',
+                    chunkIndex: idx,
+                    text,
+                },
+            };
+        })
+        .filter(Boolean) as SearchResult[];
 }
