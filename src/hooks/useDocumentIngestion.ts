@@ -1,5 +1,5 @@
 /**
- * useDocumentIngestion.ts — File → parse → chunk → native AiMesh store.
+ * useDocumentIngestion.ts — File → parse → chunk → native barq-mesh-web store.
  */
 
 import { useState, useCallback, useContext, useEffect } from 'react';
