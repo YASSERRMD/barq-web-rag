@@ -2,7 +2,7 @@
  * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
  *
  * Hot path:
- * - real MiniLM embeddings on the main thread with batching
+ * - real MiniLM embeddings in a worker pool
  * - insert vectors through barq-mesh-web with explicit IDs
  * - search natively through barq-mesh-web
  */
@@ -55,32 +55,36 @@ export async function initDb(onProgress?: (p: number) => void): Promise<void> {
     initPromise = (async () => {
         console.log('[vectorDb] Initialising barq-mesh-web database...');
         try {
-            await initBarqWasm();
-            const vwebMod = await import('barq-vweb');
-            await (vwebMod as any).default();
-
-            const meshMod = await import('barq-mesh-web');
-            await (meshMod as any).default();
-
-            dbStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
-            await dbStore.clear();
-            metadataStore.clear();
-
-            isInitialised = true;
-            console.log('[vectorDb] barq-mesh-web ready.');
-            if (onProgress) {
-                await initEmbedderWithProgress((progress, info) => {
+            const embedInit = onProgress
+                ? initEmbedderWithProgress((progress, info) => {
                     onProgress(Math.max(0, Math.min(progress, 1)));
                     if (info?.file) {
                         console.log(`[vectorDb] embedder warmup ${info.worker}: ${info.file}`);
                     }
-                });
-            } else {
-                await initEmbedder().catch((e) => {
-                    console.warn('[vectorDb] embedder warmup failed:', e);
-                });
-            }
+                })
+                : initEmbedder();
+
+            const bootstrapDb = (async () => {
+                await initBarqWasm();
+                const [vwebMod, meshMod] = await Promise.all([
+                    import('barq-vweb'),
+                    import('barq-mesh-web'),
+                ]);
+                await (vwebMod as any).default();
+                await (meshMod as any).default();
+
+                dbStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
+                await dbStore.clear();
+                metadataStore.clear();
+                console.log('[vectorDb] barq-mesh-web ready.');
+            })();
+
+            await Promise.all([bootstrapDb, embedInit]);
+            isInitialised = true;
         } catch (e) {
+            dbStore = null;
+            metadataStore.clear();
+            isInitialised = false;
             console.error('[vectorDb] Init failed:', e);
             throw e;
         } finally {
@@ -190,7 +194,7 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${dbStore?.backend_info?.() ?? 'Inactive'} | MiniLM embeddings`;
+    return `${dbStore?.backend_info?.() ?? 'Inactive'} | MiniLM worker pool`;
 }
 
 function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
