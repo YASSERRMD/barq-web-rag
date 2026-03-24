@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
-    "barq-mesh-web": "file:barq-mesh-web/pkg",
+    "barq-mesh-web": "file:public/barq-mesh-web-pkg",
     "barq-vweb": "file:public/barq-vweb-pkg",
     "barq-wasm": "file:public/barq-wasm-pkg",
     "highlight.js": "^11.11.1",

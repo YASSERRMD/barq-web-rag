@@ -5,7 +5,7 @@
 
 import { useContext, useCallback } from 'react';
 import { LLMContext } from './LLMContext';
-import { searchSimilar, getCount } from '../lib/vectorDb';
+import { searchSimilar } from '../lib/vectorDb';
 import type { ChatMessage, SourceChunk } from './LLMContext';
 
 const TOP_K = 5;

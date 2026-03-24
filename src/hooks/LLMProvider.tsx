@@ -4,7 +4,7 @@
  * Modified to support RAG: `send()` accepts a pre-built messages array.
  */
 
-import { useRef, useState, useCallback, useMemo, useEffect, useContext, type ReactNode } from 'react';
+import { useRef, useState, useCallback, useMemo, type ReactNode } from 'react';
 import {
     pipeline,
     TextStreamer,

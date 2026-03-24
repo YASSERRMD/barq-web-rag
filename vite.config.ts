@@ -9,7 +9,8 @@ export default defineConfig({
     plugins: [wasm(), topLevelAwait(), react()],
     resolve: {
         alias: {
-            // Map dependencies used by barq-mesh-web submodule to the root public packages
+            // Map the submodule to the local public folder for easier browser detection
+            'barq-mesh-web': resolve(__dirname, 'public/barq-mesh-web-pkg'),
             'barq-vweb': resolve(__dirname, 'public/barq-vweb-pkg'),
             'barq-wasm': resolve(__dirname, 'public/barq-wasm-pkg'),
         },
@@ -27,6 +28,8 @@ export default defineConfig({
         },
     },
     optimizeDeps: {
-        exclude: ['@huggingface/transformers', 'barq-vweb', 'barq-wasm', 'barq-mesh-web'],
+        // Exclude WASM from optimization (they are already binary assets)
+        // But NOT transformers (Vite should bundle it for workers)
+        exclude: ['barq-vweb', 'barq-wasm', 'barq-mesh-web'],
     },
 })

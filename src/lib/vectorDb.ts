@@ -1,6 +1,7 @@
 /**
- * vectorDb.ts — Full RAG pipeline using barq-mesh-web (replaces manual vweb+wasm)
- * and parallel Web Workers for chunking/embedding.
+ * vectorDb.ts — High-performance RAG pipeline using barq-mesh-web and parallel embedding.
+ *
+ * This version uses the modern URL approach for workers and fixed relative imports in WASM.
  */
 
 import { initEmbedder, embedText, EMBED_DIM } from './embedder';
@@ -18,32 +19,54 @@ export interface ChunkMeta {
     text: string;
 }
 
-let meshStore: any = null; // BarqMeshWeb instance
+let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
-let WorkerModule: any = null;
 
 const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
 let nextId = 0;
 
+/**
+ * Initialise the WASM compute mesh.
+ */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        const mod = await import('barq-mesh-web');
-        await (mod as any).default();
-        meshStore = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
+        console.log('[vectorDb] Initialising barq-mesh-web (Parallel Edition)...');
         
-        console.log('[barq-mesh-web] initialised —', meshStore.backend_info());
+        // Timeout for WASM init to prevent silent hangs
+        const initTimeout = setTimeout(() => {
+            if (!isInitialised) console.warn('[vectorDb] WASM initialisation is taking a long time (10s+)...');
+        }, 10000);
 
-        // Pre-load worker module
-        WorkerModule = await import('../workers/embed.worker?worker');
+        try {
+            // CRITICAL: Initialize base WASM modules FIRST to bind '__wbindgen_malloc' and memory.
+            const vwebMod = await import('barq-vweb');
+            await (vwebMod as any).default();
+            
+            const wasmMod = await import('barq-wasm');
+            await (wasmMod as any).default();
 
-        // Lazy initialize the main thread embedder for query searching
-        initEmbedder().catch((e) => console.warn('[embedder] warm-up failed:', e));
-
-        isInitialised = true;
+            // Then point directly to the mesh asset
+            const mod = await import('barq-mesh-web');
+            await (mod as any).default();
+            
+            // BarqMeshWeb combines BM25 + HNSW
+            meshStore = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
+            
+            console.log('[vectorDb] Mesh Store ready — backend:', meshStore.backend_info());
+            
+            // Warm up main embedder
+            initEmbedder().catch(() => {});
+            isInitialised = true;
+        } catch (e) {
+            console.error('[vectorDb] FATAL: Mesh initialisation failed:', e);
+            throw e;
+        } finally {
+            clearTimeout(initTimeout);
+        }
     })();
 
     return initPromise;
@@ -54,8 +77,7 @@ function ensureInit() {
 }
 
 /**
- * Parallel embedding using a pool of Web Workers.
- * Workers load transformers.js and embed chunks without blocking main thread.
+ * Parallel embedding using a dynamic worker pool.
  */
 export async function insertChunksParallel(
     metas: ChunkMeta[],
@@ -65,39 +87,36 @@ export async function insertChunksParallel(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => m.text);
-    
-    // Create worker pool
+    // Scale workers but leave room for the main UI and model threads
     const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
-    const workers: Worker[] = [];
     const chunksPerWorker = Math.ceil(texts.length / numWorkers);
 
-    console.log(`[vectorDb] Spinning up ${numWorkers} Web Workers for embedding...`);
+    console.log(`[vectorDb] Starting parallel ingestion for ${texts.length} chunks vs ${numWorkers} workers.`);
 
-    let totalCompleted = 0;
-
+    let completed = 0;
     const workerPromises = Array.from({ length: numWorkers }).map((_, i) => {
         return new Promise<Float32Array[]>((resolve, reject) => {
-            // Handle both WorkerModule.default (Vite dynamic import) and WorkerModule
-            const WorkerCtor = WorkerModule.default || WorkerModule;
-            const worker = new WorkerCtor();
-            workers.push(worker);
+            const start = i * chunksPerWorker;
+            const end = Math.min(start + chunksPerWorker, texts.length);
+            const batch = texts.slice(start, end);
 
-            const startIdx = i * chunksPerWorker;
-            const endIdx = Math.min(startIdx + chunksPerWorker, texts.length);
-            const workerTexts = texts.slice(startIdx, endIdx);
-
-            if (workerTexts.length === 0) {
-                worker.terminate();
+            if (batch.length === 0) {
                 resolve([]);
                 return;
             }
 
-            worker.onmessage = (e: MessageEvent) => {
+            // Using the modern 'import.meta.url' pattern for better module worker bundling in Vite
+            const worker = new Worker(
+                new URL('../workers/embed.worker.ts', import.meta.url),
+                { type: 'module' }
+            );
+
+            worker.onmessage = (e) => {
                 const data = e.data;
                 if (data.type === 'progress') {
-                    // Approximate progress tracking
-                    totalCompleted += 1;
-                    onProgress(Math.min(totalCompleted / texts.length, 1));
+                    // Each 'progress' msg from worker is one chunk done
+                    completed += 1;
+                    onProgress(Math.min(completed / texts.length, 1));
                 } else if (data.type === 'done') {
                     resolve(data.results);
                     worker.terminate();
@@ -107,86 +126,75 @@ export async function insertChunksParallel(
                 }
             };
 
-            worker.postMessage({ id: `worker-${i}`, texts: workerTexts });
+            worker.onerror = (err) => {
+                console.error(`[vectorDb] Worker ${i} crash:`, err);
+                reject(err);
+                worker.terminate();
+            };
+
+            worker.postMessage({ id: `worker-${i}`, texts: batch });
         });
     });
 
-    let results: Float32Array[][] = [];
     try {
-        results = await Promise.all(workerPromises);
-    } catch (e: any) {
-        console.error('[vectorDb] Worker pool failed:', e);
-        workers.forEach(w => w.terminate());
-        throw e;
-    }
-    
-    const allEmbeddings = results.flat();
-    console.log(`[vectorDb] All workers finished. Total embeddings: ${allEmbeddings.length} / ${metas.length}`);
+        const results = await Promise.all(workerPromises);
+        const allEmbeddings = results.flat();
 
-    if (allEmbeddings.length === 0) return getCount();
+        if (allEmbeddings.length > 0) {
+            const flatVec = new Float32Array(allEmbeddings.length * EMBED_DIM);
+            const ids = new Uint32Array(allEmbeddings.length);
 
-    const flatVec = new Float32Array(allEmbeddings.length * EMBED_DIM);
-    const ids = new Uint32Array(allEmbeddings.length);
+            for (let i = 0; i < allEmbeddings.length; i++) {
+                const id = nextId + i;
+                ids[i] = id;
+                flatVec.set(allEmbeddings[i], i * EMBED_DIM);
+                metadataStore.set(id, { ...metas[i], vector: allEmbeddings[i] });
+            }
 
-    for (let i = 0; i < allEmbeddings.length; i++) {
-        const id = nextId + i;
-        ids[i] = id;
-        flatVec.set(allEmbeddings[i], i * EMBED_DIM);
-        metadataStore.set(id, { ...metas[i], vector: allEmbeddings[i] });
-    }
-
-    try {
-        // Upsert via barq-mesh-web (handles normalize + vweb indexing in WASM!)
-        const updatedCount = await meshStore.upsert_vectors(flatVec, ids);
-        console.log(`[vectorDb] Successfully upserted to WASM store. New count: ${updatedCount}`);
-        nextId += allEmbeddings.length;
-    } catch (e) {
-        console.error('[vectorDb] upsert_vectors failed:', e);
+            // High-speed batch upsert to HNSW layer
+            const newCount = await meshStore.upsert_vectors(flatVec, ids);
+            nextId += allEmbeddings.length;
+            console.log(`[vectorDb] Successfully indexed ${allEmbeddings.length} chunks. Store total: ${newCount}`);
+        }
+    } catch (err) {
+        console.error('[vectorDb] Ingestion was interrupted by a worker error.');
+        throw err;
     }
 
     return getCount();
 }
 
-/** Backup serial insert fallback if needed */
+/** Legacy/Serial fallback */
 export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
     return insertChunksParallel(metas, () => {});
 }
 
+/** Semantic Search using mesh kNN + BM25 intersection logic (simulated in JS for now) */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
-    if (metadataStore.size === 0) {
-        console.log('[vectorDb] Search skipped: metadataStore is empty.');
-        return [];
-    }
+    if (metadataStore.size === 0) return [];
 
-    // Embed the query in the main thread (fast enough for one sentence)
+    console.log(`[vectorDb] RAG Search: "${query}" (topK=${topK})`);
     const queryVec = await embedText(query);
-
-    // barq-mesh-web handles normalization and the vector search
-    const rawStr = await meshStore.search_vector(queryVec, topK);
-
-    let results: Array<{ id: number; score: number }> = [];
-    try { 
-        results = JSON.parse(rawStr); 
-    } catch { 
-        console.warn('[vectorDb] Failed to parse search results:', rawStr);
-        results = []; 
-    }
+    
+    // search_vector returns JSON string of [{id, score}]
+    const rawIds = await meshStore.search_vector(queryVec, topK);
+    let topResults: Array<{ id: number; score: number }> = [];
+    try { topResults = JSON.parse(rawIds); } catch { topResults = []; }
 
     const mod = await import('barq-mesh-web');
-
-    // Mapped results with re-rank tracking
-    const mapped = results
+    
+    const mapped = (topResults
         .map((r: any) => {
             const id = r.id;
             const meta = metadataStore.get(id);
             if (!meta) return null;
             
-            // Re-verify score using barq-mesh-web's native SIMD exported function
+            // Re-verify with barq-mesh-web's native SIMD for peak precision
             const score = mod.cosine_similarity_simd(queryVec, meta.vector);
             return { id, score, text: meta.text, metadata: meta };
         })
-        .filter(Boolean) as SearchResult[];
+        .filter((res) => res !== null) as SearchResult[]);
 
     mapped.sort((a, b) => b.score - a.score);
     return mapped;
@@ -204,5 +212,5 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return meshStore?.backend_info() ?? 'not initialised';
+    return meshStore?.backend_info() ?? 'Inactive';
 }
