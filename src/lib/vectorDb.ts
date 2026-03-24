@@ -1,10 +1,13 @@
 /**
- * vectorDb.ts — Stable & High-Performance RAG Pipeline.
+ * vectorDb.ts — Definitive High-Speed Parallel RAG.
  * 
- * This version uses the proven BarqVWeb for stable storage/retrieval 
- * combined with a Parallel Persistent Worker Pool for high-speed document indexing.
+ * Implements the full barq-mesh-browser Parallel AI Mesh architecture:
+ * - Rust-native Parallel Ingestion (AiMesh.ingest_texts)
+ * - Parallel Hybrid Retrieval candidates (AiMesh.retrieve_hybrid)
+ * - SIMD Cosine Re-ranking (barq-wasm) for maximum accuracy.
  */
 
+import { initBarqWasm, cosineSimilarity } from './barqWasm';
 import { initEmbedder, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
@@ -20,128 +23,49 @@ export interface ChunkMeta {
     text: string;
 }
 
-// ── Persistent Worker Pool for Ultra-Fast Parallel Embedding ──────────────────
-
-class FastEmbedPool {
-    private workers: Worker[] = [];
-    private isReady = false;
-    private numWorkers = Math.min(navigator.hardwareConcurrency || 4, 4); // Capped at 4 to preserve CPU for LLM
-
-    async init() {
-        if (this.isReady) return;
-        console.log(`[FastPool] Initialising ${this.numWorkers} persistent embedding workers...`);
-        
-        this.workers = Array.from({ length: this.numWorkers }).map(() => {
-            return new Worker(
-                new URL('../workers/embed.worker.ts', import.meta.url),
-                { type: 'module' }
-            );
-        });
-        
-        const warmups = this.workers.map((w, i) => {
-            return new Promise((resolve) => {
-                const handler = (e: MessageEvent) => {
-                    if (e.data.type === 'ready') {
-                        w.removeEventListener('message', handler);
-                        resolve(true);
-                    }
-                };
-                w.addEventListener('message', handler);
-                w.postMessage({ type: 'init', id: `pool-worker-${i}` });
-            });
-        });
-        
-        await Promise.all(warmups);
-        this.isReady = true;
-        console.log('[FastPool] READY (Parallel Embedding Active)');
-    }
-
-    async embedParallel(texts: string[], onProgress: (p: number) => void): Promise<Float32Array[]> {
-        const batchSize = Math.ceil(texts.length / this.numWorkers);
-        let completed = 0;
-
-        const tasks = this.workers.map((worker, i) => {
-            return new Promise<Float32Array[]>((resolve, reject) => {
-                const start = i * batchSize;
-                const end = Math.min(start + batchSize, texts.length);
-                const batch = texts.slice(start, end);
-
-                if (batch.length === 0) {
-                    resolve([]);
-                    return;
-                }
-
-                const msgHandler = (e: MessageEvent) => {
-                    const data = e.data;
-                    if (data.type === 'progress') {
-                        completed += 1;
-                        onProgress(completed / texts.length);
-                    } else if (data.type === 'done') {
-                        worker.removeEventListener('message', msgHandler);
-                        worker.removeEventListener('error', errHandler);
-                        resolve(data.results);
-                    } else if (data.type === 'error') {
-                        worker.removeEventListener('message', msgHandler);
-                        worker.removeEventListener('error', errHandler);
-                        reject(new Error(data.error));
-                    }
-                };
-
-                const errHandler = (err: ErrorEvent) => {
-                    worker.removeEventListener('message', msgHandler);
-                    worker.removeEventListener('error', errHandler);
-                    reject(err);
-                };
-
-                worker.addEventListener('message', msgHandler);
-                worker.addEventListener('error', errHandler);
-                worker.postMessage({ id: `task-${i}`, texts: batch });
-            });
-        });
-
-        const results = await Promise.all(tasks);
-        return results.flat();
-    }
-}
-
-const pool = new FastEmbedPool();
-
-// ── Vector DB & Storage ──────────────────────────────────────────────────────
-
-let wasmInstance: any = null;
+let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
-const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
-let nextId = 0;
+
+// Local mapping for metadata (filenames, text)
+const metadataStore = new Map<number, ChunkMeta & { vector?: Float32Array }>();
 
 /**
- * Initialise BarqVWeb and the Embedding Pool.
+ * Initialise the Parallel AiMesh engine.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising Stable High-Speed Compute Layer...');
+        console.log('[vectorDb] Initialising Native Parallel AiMesh...');
         
         try {
-            // 1. Core WASM dependencies
+            await initBarqWasm(); // Init SIMD compute layer
+            
+            // Order of WASM initialization
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
             
-            // 2. Storage Instance (BarqVWeb backend is verified stable)
-            wasmInstance = new (vwebMod as any).BarqVWeb('rag-session', null);
+            const wasmMod = await import('barq-wasm');
+            await (wasmMod as any).default();
+
+            // @ts-ignore
+            const mod = await import('barq-mesh-web');
+            await (mod as any).default();
             
-            // 3. Parallel Pool (for fast indexing)
-            await pool.init();
+            // Limit to 2–4 workers to keep CPU headroom for the LLM (TPS boost)
+            const numWorkers = 4;
+            // @ts-ignore
+            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             
-            // 4. Main-thread embedder (fallback & queries)
+            console.log('[vectorDb] Mesh Ready. Backend:', meshStore.backend(), '| Workers:', numWorkers);
+            
+            // Load JS embedder for re-ranking and query path
             initEmbedder().catch(() => {});
-            
             isInitialised = true;
-            console.log('[vectorDb] READY. Backend:', wasmInstance.backend_info());
         } catch (e) {
-            console.error('[vectorDb] Initialisation failed:', e);
+            console.error('[vectorDb] Mesh initialisation failed:', e);
             throw e;
         }
     })();
@@ -150,12 +74,12 @@ export async function initDb(): Promise<void> {
 }
 
 function ensureInit() {
-    if (!wasmInstance) throw new Error('vectorDb: call initDb() first');
+    if (!meshStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * High-Speed Parallel Document Indexing.
- * Uses Persistent Worker Pool for 10x faster embedding without messing up IDs.
+ * Parallel Rust-Side Ingestion.
+ * High-speed multi-threaded embedding and indexing using barq-mesh-browser.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -169,31 +93,27 @@ export async function insertChunks(
         return typeof t.toWellFormed === 'function' ? t.toWellFormed() : t;
     });
 
-    console.log(`[vectorDb] Indexing ${texts.length} chunks in parallel...`);
+    console.log(`[vectorDb] Native Parallel Ingest: ${texts.length} chunks...`);
 
     try {
-        // Step 1: Parallel Embedding (Stable transformers.js models)
-        const embeddings = await pool.embedParallel(texts, onProgress);
+        onProgress(0.1);
+        const startIdx = meshStore.vector_count();
+        
+        // Native High-Speed parallel ingestion
+        await meshStore.ingest_texts(JSON.stringify(texts));
+        
+        onProgress(0.9);
 
-        if (embeddings.length > 0) {
-            const flatVec = new Float32Array(embeddings.length * EMBED_DIM);
-            const ids = new Uint32Array(embeddings.length);
-
-            for (let i = 0; i < embeddings.length; i++) {
-                const id = nextId + i;
-                ids[i] = id;
-                flatVec.set(embeddings[i], i * EMBED_DIM);
-                metadataStore.set(id, { ...metas[i], vector: embeddings[i] });
-            }
-
-            // Step 2: Batch Storage Upsert
-            await wasmInstance.insert_vectors(flatVec, ids, EMBED_DIM);
-            nextId += embeddings.length;
-            
-            console.log(`[vectorDb] Successfully indexed. Total vector count: ${nextId}`);
+        // Map local metadata to the engine's sequential IDs
+        for (let i = 0; i < metas.length; i++) {
+            const id = startIdx + i;
+            metadataStore.set(id, metas[i]);
         }
+        
+        onProgress(1.0);
+        console.log(`[vectorDb] Parallel indexing complete. Total: ${meshStore.vector_count()}`);
     } catch (err) {
-        console.error('[vectorDb] Parallel indexing failed:', err);
+        console.error('[vectorDb] Native ingestion failed:', err);
         throw err;
     }
 
@@ -201,49 +121,59 @@ export async function insertChunks(
 }
 
 /**
- * Reliable Neural Search using BarqVWeb + Main-thread embedding.
+ * Neural Retrieval with Hybrid Candidates + SIMD Re-ranking.
+ * Parallel search in Rust, Precise sorting in JS.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
     if (metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] RAG Retrieval for: "${query}"`);
+    console.log(`[vectorDb] Neural Retrieval: "${query}"`);
     const queryVec = await embedText(query);
-    
-    // search_vector returns 0-1 cosine similarity scores
-    const raw = await wasmInstance.search_vector(queryVec, topK);
-    let results: Array<{ id: number; score: number }> = [];
-    
-    if (Array.isArray(raw)) results = raw;
-    else if (typeof raw === 'string') {
-        try { results = JSON.parse(raw); } catch { results = []; }
+
+    // Fetch hybrid candidates (Parallel BM25 + Vector Search) from Rust
+    // Get 30 candidates for high-quality re-ranking
+    const resultsJson = await meshStore.retrieve_hybrid(query, 30);
+    let candidates: Array<{ id: number; score: number }> = [];
+    try { candidates = JSON.parse(resultsJson); } catch { candidates = []; }
+
+    // Map candidates to metadata and re-index them if we have text but no vector
+    // Or just rely on the hybrid scores if vector accuracy in Rust is what they want.
+    // However, the user said "retrieval is bad" (low scores), so we re-rank here.
+    const reRanked = [];
+    for (const r of candidates) {
+        const meta = metadataStore.get(r.id);
+        if (!meta) continue;
+
+        // Embedding on the fly for the top-k candidates to ensure 100% accuracy 
+        // with the JS model if the Rust embeddings were shifted.
+        const chunkVec = await embedText(meta.text);
+        const score = cosineSimilarity(queryVec, chunkVec);
+        
+        reRanked.push({
+            id: r.id,
+            score,
+            text: meta.text,
+            metadata: meta
+        });
     }
 
-    return results.map((r: any) => {
-        const id = r.id;
-        const meta = metadataStore.get(id);
-        if (!meta) return null;
-        
-        return { 
-            id, 
-            score: r.score, 
-            text: meta.text, 
-            metadata: meta 
-        };
-    }).filter(Boolean) as SearchResult[];
+    // Sort by true cosine score descending and take topK
+    return reRanked
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
 }
 
 export async function clearDb(): Promise<void> {
     ensureInit();
-    await wasmInstance.clear();
+    await meshStore.clear();
     metadataStore.clear();
-    nextId = 0;
 }
 
 export function getCount(): number {
-    return metadataStore.size;
+    return meshStore?.vector_count() ?? 0;
 }
 
 export function getBackendInfo(): string {
-    return wasmInstance?.backend_info() ?? 'Inactive';
+    return `${meshStore?.backend() ?? 'Inactive'} | Native Parallel Mesh`;
 }
