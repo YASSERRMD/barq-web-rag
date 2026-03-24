@@ -6,7 +6,7 @@
  */
 
 import { initBarqWasm, cosineSimilarity } from './barqWasm';
-import { initEmbedder, embedText, EMBED_DIM } from './embedder';
+import { initEmbedder, embedBatch, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -21,13 +21,16 @@ export interface ChunkMeta {
     text: string;
 }
 
+interface StoredChunk extends ChunkMeta {
+    vector: Float32Array;
+}
+
 let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
 
 // Local mapping for metadata synchronization
-const metadataStore = new Map<number, ChunkMeta>();
-const rerankVectorCache = new Map<number, Float32Array>();
+const metadataStore = new Map<number, StoredChunk>();
 
 /**
  * Initialise the stable AiMesh engine on demand.
@@ -51,6 +54,7 @@ export async function initDb(): Promise<void> {
             // @ts-ignore
             meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             await meshStore.clear();
+            metadataStore.clear();
             
             isInitialised = true;
             console.log('[vectorDb] Mesh ready with', numWorkers, 'workers.');
@@ -87,6 +91,8 @@ export async function insertChunks(
         onProgress(0.1);
         // Captured count for ID sequence alignment
         const startIdx = meshStore.vector_count();
+        const vectors = await embedBatch(texts);
+        onProgress(0.4);
         
         // Native High-Speed Ingestion
         await meshStore.ingest_texts(JSON.stringify(texts));
@@ -96,8 +102,7 @@ export async function insertChunks(
         // SYNC: Strictly align metadata with the incrementing Rust IDs
         for (let i = 0; i < metas.length; i++) {
             const id = startIdx + i;
-            metadataStore.set(id, metas[i]);
-            rerankVectorCache.delete(id);
+            metadataStore.set(id, { ...metas[i], vector: vectors[i] });
         }
         
         onProgress(1.0);
@@ -118,46 +123,47 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 
     console.log(`[vectorDb] Parallel retrieval: "${query}"`);
     const queryVec = await embedText(query);
-    const candidateCount = Math.max(topK * 6, 30);
-    const resultsJson = await meshStore.retrieve_hybrid(query, candidateCount);
-    
-    let results: Array<{ id: number; score: number }> = [];
-    try { results = JSON.parse(resultsJson); } catch { results = []; }
 
-    const reranked: SearchResult[] = [];
-    for (const r of results) {
-        const meta = metadataStore.get(r.id);
-        if (!meta) continue;
+    const best: SearchResult[] = [];
 
-        let candidateVec = rerankVectorCache.get(r.id);
-        if (!candidateVec) {
-            candidateVec = await embedText(meta.text);
-            rerankVectorCache.set(r.id, candidateVec);
-        }
-
-        reranked.push({
-            id: r.id,
-            score: cosineSimilarity(queryVec, candidateVec),
+    for (const [id, meta] of metadataStore.entries()) {
+        const score = cosineSimilarity(queryVec, meta.vector);
+        const candidate: SearchResult = {
+            id,
+            score,
             text: meta.text,
             metadata: meta,
-        });
+        };
+
+        if (best.length < topK) {
+            insertSorted(best, candidate);
+            continue;
+        }
+
+        if (score > best[best.length - 1].score) {
+            best.pop();
+            insertSorted(best, candidate);
+        }
     }
 
-    return reranked
-        .sort((a, b) => b.score - a.score)
-        .slice(0, topK);
+    return best;
 }
 
 export async function clearDb(): Promise<void> {
     if (meshStore) await meshStore.clear();
     metadataStore.clear();
-    rerankVectorCache.clear();
 }
 
 export function getCount(): number {
-    return meshStore?.vector_count() ?? 0;
+    return metadataStore.size;
 }
 
 export function getBackendInfo(): string {
-    return `${meshStore?.backend() ?? 'Inactive'} | Parallel Mode`;
+    return `${meshStore?.backend() ?? 'Inactive'} | SIMD Dense Retrieval`;
+}
+
+function insertSorted(target: SearchResult[], item: SearchResult): void {
+    let index = 0;
+    while (index < target.length && target[index].score >= item.score) index++;
+    target.splice(index, 0, item);
 }
