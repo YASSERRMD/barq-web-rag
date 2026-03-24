@@ -48,9 +48,11 @@ function LandingScreen({ onStart, isLoading, progress, error }: {
                 </div>
             </div>
 
-            {/* Headline */}
             <div>
-                <h1 className="gradient-text" style={{ marginBottom: '0.5rem' }}>Barq RAG</h1>
+                <h1 className="gradient-text" style={{ marginBottom: '0.5rem' }}>
+                    Barq RAG
+                    <span style={{ fontSize: '0.7rem', opacity: 0.4, fontWeight: 'normal', marginLeft: '0.5rem' }}>v2.5 (Parallel Mesh)</span>
+                </h1>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', maxWidth: '480px', lineHeight: 1.7 }}>
                     Upload documents and chat with them using{' '}
                     <strong style={{ color: 'var(--accent-light)' }}>LiquidAI LFM2.5-1.2B</strong>{' '}

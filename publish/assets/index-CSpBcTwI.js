@@ -78,7 +78,7 @@ let __tla = (async () => {
   function OA() {
     return I0 || (I0 = 1, gg.exports = PA()), gg.exports;
   }
-  var Ye = OA(), bg = {
+  var Qe = OA(), bg = {
     exports: {}
   }, vn = {};
   var D0;
@@ -979,30 +979,30 @@ let __tla = (async () => {
                 }), typeof Reflect == "object" && Reflect.construct) {
                   try {
                     Reflect.construct(lt, []);
-                  } catch (Qe) {
-                    var je = Qe;
+                  } catch (Ye) {
+                    var je = Ye;
                   }
                   Reflect.construct(r, [], lt);
                 } else {
                   try {
                     lt.call();
-                  } catch (Qe) {
-                    je = Qe;
+                  } catch (Ye) {
+                    je = Ye;
                   }
                   r.call(lt.prototype);
                 }
               } else {
                 try {
                   throw Error();
-                } catch (Qe) {
-                  je = Qe;
+                } catch (Ye) {
+                  je = Ye;
                 }
                 (lt = r()) && typeof lt.catch == "function" && lt.catch(function() {
                 });
               }
-            } catch (Qe) {
-              if (Qe && je && typeof Qe.stack == "string") return [
-                Qe.stack,
+            } catch (Ye) {
+              if (Ye && je && typeof Ye.stack == "string") return [
+                Ye.stack,
                 je.stack
               ];
             }
@@ -1218,8 +1218,8 @@ Error generating stack: ` + p.message + `
         ne[at] = 0, be[at] = -1;
         var je = ze[at];
         if (je !== null) for (ze[at] = null, at = 0; at < je.length; at++) {
-          var Qe = je[at];
-          Qe !== null && (Qe.lane &= -536870913);
+          var Ye = je[at];
+          Ye !== null && (Ye.lane &= -536870913);
         }
         o &= ~lt;
       }
@@ -3006,7 +3006,7 @@ Error generating stack: ` + p.message + `
         }
         return null;
       }
-      function Qe(Se, Me, Re, st, en) {
+      function Ye(Se, Me, Re, st, en) {
         if (typeof st == "string" && st !== "" || typeof st == "number" || typeof st == "bigint") return Se = Se.get(Re) || null, ne(Me, Se, "" + st, en);
         if (typeof st == "object" && st !== null) {
           switch (st.$$typeof) {
@@ -3015,11 +3015,11 @@ Error generating stack: ` + p.message + `
             case y:
               return Se = Se.get(st.key === null ? Re : st.key) || null, ze(Me, Se, st, en);
             case N:
-              return st = Vs(st), Qe(Se, Me, Re, st, en);
+              return st = Vs(st), Ye(Se, Me, Re, st, en);
           }
           if (Q(st) || X(st)) return Se = Se.get(Re) || null, at(Me, Se, st, en, null);
-          if (typeof st.then == "function") return Qe(Se, Me, Re, Oc(st), en);
-          if (st.$$typeof === I) return Qe(Se, Me, Re, yl(Me, st), en);
+          if (typeof st.then == "function") return Ye(Se, Me, Re, Oc(st), en);
+          if (st.$$typeof === I) return Ye(Se, Me, Re, yl(Me, st), en);
           Ic(Me, st);
         }
         return null;
@@ -3039,7 +3039,7 @@ Error generating stack: ` + p.message + `
           for (; An < Re.length; An++) Qt = lt(Se, Re[An], st), Qt !== null && (Me = v(Qt, Me, An), Zn === null ? en = Qt : Zn.sibling = Qt, Zn = Qt);
           return $n && yi(Se, An), en;
         }
-        for (Qt = p(Qt); An < Re.length; An++) jn = Qe(Qt, Se, An, Re[An], st), jn !== null && (r && jn.alternate !== null && Qt.delete(jn.key === null ? An : jn.key), Me = v(jn, Me, An), Zn === null ? en = jn : Zn.sibling = jn, Zn = jn);
+        for (Qt = p(Qt); An < Re.length; An++) jn = Ye(Qt, Se, An, Re[An], st), jn !== null && (r && jn.alternate !== null && Qt.delete(jn.key === null ? An : jn.key), Me = v(jn, Me, An), Zn === null ? en = jn : Zn.sibling = jn, Zn = jn);
         return r && Qt.forEach(function(Jl) {
           return i(Se, Jl);
         }), $n && yi(Se, An), en;
@@ -3060,7 +3060,7 @@ Error generating stack: ` + p.message + `
           for (; !Jn.done; An++, Jn = Re.next()) Jn = lt(Se, Jn.value, st), Jn !== null && (Me = v(Jn, Me, An), Zn === null ? en = Jn : Zn.sibling = Jn, Zn = Jn);
           return $n && yi(Se, An), en;
         }
-        for (Qt = p(Qt); !Jn.done; An++, Jn = Re.next()) Jn = Qe(Qt, Se, An, Jn.value, st), Jn !== null && (r && Jn.alternate !== null && Qt.delete(Jn.key === null ? An : Jn.key), Me = v(Jn, Me, An), Zn === null ? en = Jn : Zn.sibling = Jn, Zn = Jn);
+        for (Qt = p(Qt); !Jn.done; An++, Jn = Re.next()) Jn = Ye(Qt, Se, An, Jn.value, st), Jn !== null && (r && Jn.alternate !== null && Qt.delete(Jn.key === null ? An : Jn.key), Me = v(Jn, Me, An), Zn === null ? en = Jn : Zn.sibling = Jn, Zn = Jn);
         return r && Qt.forEach(function(kA) {
           return i(Se, kA);
         }), $n && yi(Se, An), en;
@@ -3230,8 +3230,8 @@ Error generating stack: ` + p.message + `
         var lt = b.baseState;
         F = 0, at = ze = be = null, ne = v;
         do {
-          var je = ne.lane & -536870913, Qe = je !== ne.lane;
-          if (Qe ? (Dn & je) === je : (p & je) === je) {
+          var je = ne.lane & -536870913, Ye = je !== ne.lane;
+          if (Ye ? (Dn & je) === je : (p & je) === je) {
             je !== 0 && je === Io && (Zu = true), at !== null && (at = at.next = {
               lane: 0,
               tag: ne.tag,
@@ -3261,19 +3261,19 @@ Error generating stack: ` + p.message + `
                   Ui = true;
               }
             }
-            je = ne.callback, je !== null && (r.flags |= 64, Qe && (r.flags |= 8192), Qe = b.callbacks, Qe === null ? b.callbacks = [
+            je = ne.callback, je !== null && (r.flags |= 64, Ye && (r.flags |= 8192), Ye = b.callbacks, Ye === null ? b.callbacks = [
               je
-            ] : Qe.push(je));
-          } else Qe = {
+            ] : Ye.push(je));
+          } else Ye = {
             lane: je,
             tag: ne.tag,
             payload: ne.payload,
             callback: ne.callback,
             next: null
-          }, at === null ? (ze = at = Qe, be = lt) : at = at.next = Qe, F |= je;
+          }, at === null ? (ze = at = Ye, be = lt) : at = at.next = Ye, F |= je;
           if (ne = ne.next, ne === null) {
             if (ne = b.shared.pending, ne === null) break;
-            Qe = ne, ne = Qe.next, Qe.next = null, b.lastBaseUpdate = Qe, b.shared.pending = null;
+            Ye = ne, ne = Ye.next, Ye.next = null, b.lastBaseUpdate = Ye, b.shared.pending = null;
           }
         } while (true);
         at === null && (be = lt), b.baseState = be, b.firstBaseUpdate = ze, b.lastBaseUpdate = at, v === null && (b.shared.lanes = 0), xi |= F, r.lanes = F, r.memoizedState = lt;
@@ -4584,8 +4584,8 @@ Error generating stack: ` + p.message + `
         v.state = je, Ro(i, p, v, b), Sl(), ze = i.memoizedState, ne || je !== ze || Ui ? (typeof lt == "function" && (Ed(i, o, lt, p), ze = i.memoizedState), (be = Ui || ms(i, o, be, p, je, ze, F)) ? (at || typeof v.UNSAFE_componentWillMount != "function" && typeof v.componentWillMount != "function" || (typeof v.componentWillMount == "function" && v.componentWillMount(), typeof v.UNSAFE_componentWillMount == "function" && v.UNSAFE_componentWillMount()), typeof v.componentDidMount == "function" && (i.flags |= 4194308)) : (typeof v.componentDidMount == "function" && (i.flags |= 4194308), i.memoizedProps = p, i.memoizedState = ze), v.props = p, v.state = ze, v.context = F, p = be) : (typeof v.componentDidMount == "function" && (i.flags |= 4194308), p = false);
       } else {
         v = i.stateNode, Yu(r, i), F = i.memoizedProps, at = Xs(o, F), v.props = at, lt = i.pendingProps, je = v.context, ze = o.contextType, be = Co, typeof ze == "object" && ze !== null && (be = pa(ze)), ne = o.getDerivedStateFromProps, (ze = typeof ne == "function" || typeof v.getSnapshotBeforeUpdate == "function") || typeof v.UNSAFE_componentWillReceiveProps != "function" && typeof v.componentWillReceiveProps != "function" || (F !== lt || je !== be) && Mp(i, v, p, be), Ui = false, je = i.memoizedState, v.state = je, Ro(i, p, v, b), Sl();
-        var Qe = i.memoizedState;
-        F !== lt || je !== Qe || Ui || r !== null && r.dependencies !== null && Cc(r.dependencies) ? (typeof ne == "function" && (Ed(i, o, ne, p), Qe = i.memoizedState), (at = Ui || ms(i, o, at, p, je, Qe, be) || r !== null && r.dependencies !== null && Cc(r.dependencies)) ? (ze || typeof v.UNSAFE_componentWillUpdate != "function" && typeof v.componentWillUpdate != "function" || (typeof v.componentWillUpdate == "function" && v.componentWillUpdate(p, Qe, be), typeof v.UNSAFE_componentWillUpdate == "function" && v.UNSAFE_componentWillUpdate(p, Qe, be)), typeof v.componentDidUpdate == "function" && (i.flags |= 4), typeof v.getSnapshotBeforeUpdate == "function" && (i.flags |= 1024)) : (typeof v.componentDidUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 4), typeof v.getSnapshotBeforeUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 1024), i.memoizedProps = p, i.memoizedState = Qe), v.props = p, v.state = Qe, v.context = be, p = at) : (typeof v.componentDidUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 4), typeof v.getSnapshotBeforeUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 1024), p = false);
+        var Ye = i.memoizedState;
+        F !== lt || je !== Ye || Ui || r !== null && r.dependencies !== null && Cc(r.dependencies) ? (typeof ne == "function" && (Ed(i, o, ne, p), Ye = i.memoizedState), (at = Ui || ms(i, o, at, p, je, Ye, be) || r !== null && r.dependencies !== null && Cc(r.dependencies)) ? (ze || typeof v.UNSAFE_componentWillUpdate != "function" && typeof v.componentWillUpdate != "function" || (typeof v.componentWillUpdate == "function" && v.componentWillUpdate(p, Ye, be), typeof v.UNSAFE_componentWillUpdate == "function" && v.UNSAFE_componentWillUpdate(p, Ye, be)), typeof v.componentDidUpdate == "function" && (i.flags |= 4), typeof v.getSnapshotBeforeUpdate == "function" && (i.flags |= 1024)) : (typeof v.componentDidUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 4), typeof v.getSnapshotBeforeUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 1024), i.memoizedProps = p, i.memoizedState = Ye), v.props = p, v.state = Ye, v.context = be, p = at) : (typeof v.componentDidUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 4), typeof v.getSnapshotBeforeUpdate != "function" || F === r.memoizedProps && je === r.memoizedState || (i.flags |= 1024), p = false);
       }
       return v = p, Vc(r, i), p = (i.flags & 128) !== 0, v || p ? (v = i.stateNode, o = p && typeof o.getDerivedStateFromError != "function" ? null : v.render(), i.flags |= 1, r !== null && p ? (i.child = Ws(i, r.child, null, b), i.child = Ws(i, null, o, b)) : ma(r, i, o, b), i.memoizedState = v.state, r = i.child) : r = Hi(r, i, b), r;
     }
@@ -5376,13 +5376,13 @@ Error generating stack: ` + p.message + `
             }
             var F = 0, ne = -1, be = -1, ze = 0, at = 0, lt = r, je = null;
             t: for (; ; ) {
-              for (var Qe; lt !== o || b !== 0 && lt.nodeType !== 3 || (ne = F + b), lt !== v || p !== 0 && lt.nodeType !== 3 || (be = F + p), lt.nodeType === 3 && (F += lt.nodeValue.length), (Qe = lt.firstChild) !== null; ) je = lt, lt = Qe;
+              for (var Ye; lt !== o || b !== 0 && lt.nodeType !== 3 || (ne = F + b), lt !== v || p !== 0 && lt.nodeType !== 3 || (be = F + p), lt.nodeType === 3 && (F += lt.nodeValue.length), (Ye = lt.firstChild) !== null; ) je = lt, lt = Ye;
               for (; ; ) {
                 if (lt === r) break t;
-                if (je === o && ++ze === b && (ne = F), je === v && ++at === p && (be = F), (Qe = lt.nextSibling) !== null) break;
+                if (je === o && ++ze === b && (ne = F), je === v && ++at === p && (be = F), (Ye = lt.nextSibling) !== null) break;
                 lt = je, je = lt.parentNode;
               }
-              lt = Qe;
+              lt = Ye;
             }
             o = ne === -1 || be === -1 ? null : {
               start: ne,
@@ -5777,8 +5777,8 @@ Error generating stack: ` + p.message + `
               if (o === null) {
                 be = i;
                 try {
-                  var Qe = be.stateNode;
-                  b ? Or(Qe, true) : Or(be.stateNode, false);
+                  var Ye = be.stateNode;
+                  b ? Or(Ye, true) : Or(be.stateNode, false);
                 } catch (Ut) {
                   ar(be, be.return, Ut);
                 }
@@ -6247,7 +6247,7 @@ Error generating stack: ` + p.message + `
       } while (true);
       Qi(r);
     }
-    function Hd(r, i, o, p, b, v, F, ne, be, ze, at, lt, je, Qe) {
+    function Hd(r, i, o, p, b, v, F, ne, be, ze, at, lt, je, Ye) {
       if (r.timeoutHandle = -1, lt = i.subtreeFlags, lt & 8192 || (lt & 16785408) === 16785408) {
         lt = {
           stylesheets: null,
@@ -6261,7 +6261,7 @@ Error generating stack: ` + p.message + `
         }, Qp(i, v, lt);
         var Ut = (v & 62914560) === v ? Qc - bt() : (v & 4194048) === v ? em - bt() : 0;
         if (Ut = wA(lt, Ut), Ut !== null) {
-          Tn = v, r.cancelPendingCommit = Ut(fm.bind(null, r, i, v, o, p, b, F, ne, be, at, lt, null, je, Qe)), Js(r, v, F, !ze);
+          Tn = v, r.cancelPendingCommit = Ut(fm.bind(null, r, i, v, o, p, b, F, ne, be, at, lt, null, je, Ye)), Js(r, v, F, !ze);
           return;
         }
       }
@@ -6566,20 +6566,20 @@ Error generating stack: ` + p.message + `
                 else {
                   var lt = ne.ownerDocument || document, je = lt && lt.defaultView || window;
                   if (je.getSelection) {
-                    var Qe = je.getSelection(), Ut = ne.textContent.length, cn = Math.min(be.start, Ut), Mr = be.end === void 0 ? cn : Math.min(be.end, Ut);
-                    !Qe.extend && cn > Mr && (F = Mr, Mr = cn, cn = F);
+                    var Ye = je.getSelection(), Ut = ne.textContent.length, cn = Math.min(be.start, Ut), Mr = be.end === void 0 ? cn : Math.min(be.end, Ut);
+                    !Ye.extend && cn > Mr && (F = Mr, Mr = cn, cn = F);
                     var Se = ml(ne, cn), Me = ml(ne, Mr);
-                    if (Se && Me && (Qe.rangeCount !== 1 || Qe.anchorNode !== Se.node || Qe.anchorOffset !== Se.offset || Qe.focusNode !== Me.node || Qe.focusOffset !== Me.offset)) {
+                    if (Se && Me && (Ye.rangeCount !== 1 || Ye.anchorNode !== Se.node || Ye.anchorOffset !== Se.offset || Ye.focusNode !== Me.node || Ye.focusOffset !== Me.offset)) {
                       var Re = lt.createRange();
-                      Re.setStart(Se.node, Se.offset), Qe.removeAllRanges(), cn > Mr ? (Qe.addRange(Re), Qe.extend(Me.node, Me.offset)) : (Re.setEnd(Me.node, Me.offset), Qe.addRange(Re));
+                      Re.setStart(Se.node, Se.offset), Ye.removeAllRanges(), cn > Mr ? (Ye.addRange(Re), Ye.extend(Me.node, Me.offset)) : (Re.setEnd(Me.node, Me.offset), Ye.addRange(Re));
                     }
                   }
                 }
               }
-              for (lt = [], Qe = ne; Qe = Qe.parentNode; ) Qe.nodeType === 1 && lt.push({
-                element: Qe,
-                left: Qe.scrollLeft,
-                top: Qe.scrollTop
+              for (lt = [], Ye = ne; Ye = Ye.parentNode; ) Ye.nodeType === 1 && lt.push({
+                element: Ye,
+                left: Ye.scrollLeft,
+                top: Ye.scrollTop
               });
               for (typeof ne.focus == "function" && ne.focus(), ne = 0; ne < lt.length; ne++) {
                 var st = lt[ne];
@@ -6973,23 +6973,23 @@ Error generating stack: ` + p.message + `
         e: {
           var je = On.get(r);
           if (je !== void 0) {
-            var Qe = da, Ut = r;
+            var Ye = da, Ut = r;
             switch (r) {
               case "keypress":
                 if (ka(o) === 0) break e;
               case "keydown":
               case "keyup":
-                Qe = Pu;
+                Ye = Pu;
                 break;
               case "focusin":
-                Ut = "focus", Qe = tl;
+                Ut = "focus", Ye = tl;
                 break;
               case "focusout":
-                Ut = "blur", Qe = tl;
+                Ut = "blur", Ye = tl;
                 break;
               case "beforeblur":
               case "afterblur":
-                Qe = tl;
+                Ye = tl;
                 break;
               case "click":
                 if (o.button === 2) break e;
@@ -7001,7 +7001,7 @@ Error generating stack: ` + p.message + `
               case "mouseout":
               case "mouseover":
               case "contextmenu":
-                Qe = lc;
+                Ye = lc;
                 break;
               case "drag":
               case "dragend":
@@ -7011,33 +7011,33 @@ Error generating stack: ` + p.message + `
               case "dragover":
               case "dragstart":
               case "drop":
-                Qe = xu;
+                Ye = xu;
                 break;
               case "touchcancel":
               case "touchend":
               case "touchmove":
               case "touchstart":
-                Qe = vf;
+                Ye = vf;
                 break;
               case se:
               case we:
               case Ze:
-                Qe = Cu;
+                Ye = Cu;
                 break;
               case ln:
-                Qe = il;
+                Ye = il;
                 break;
               case "scroll":
               case "scrollend":
-                Qe = Ni;
+                Ye = Ni;
                 break;
               case "wheel":
-                Qe = sl;
+                Ye = sl;
                 break;
               case "copy":
               case "cut":
               case "paste":
-                Qe = Au;
+                Ye = Au;
                 break;
               case "gotpointercapture":
               case "lostpointercapture":
@@ -7047,11 +7047,11 @@ Error generating stack: ` + p.message + `
               case "pointerout":
               case "pointerover":
               case "pointerup":
-                Qe = pc;
+                Ye = pc;
                 break;
               case "toggle":
               case "beforetoggle":
-                Qe = Iu;
+                Ye = Iu;
             }
             var cn = (i & 4) !== 0, Mr = !cn && (r === "scroll" || r === "scrollend"), Se = cn ? je !== null ? je + "Capture" : null : je;
             cn = [];
@@ -7060,7 +7060,7 @@ Error generating stack: ` + p.message + `
               if (Re = st.stateNode, st = st.tag, st !== 5 && st !== 26 && st !== 27 || Re === null || Se === null || (st = Nr(Me, Se), st != null && cn.push(ta(Me, st, Re))), Mr) break;
               Me = Me.return;
             }
-            0 < cn.length && (je = new Qe(je, Ut, null, o, at), lt.push({
+            0 < cn.length && (je = new Ye(je, Ut, null, o, at), lt.push({
               event: je,
               listeners: cn
             }));
@@ -7068,10 +7068,10 @@ Error generating stack: ` + p.message + `
         }
         if ((i & 7) === 0) {
           e: {
-            if (je = r === "mouseover" || r === "pointerover", Qe = r === "mouseout" || r === "pointerout", je && o !== kt && (Ut = o.relatedTarget || o.fromElement) && (Pn(Ut) || Ut[Et])) break e;
-            if ((Qe || je) && (je = at.window === at ? at : (je = at.ownerDocument) ? je.defaultView || je.parentWindow : window, Qe ? (Ut = o.relatedTarget || o.toElement, Qe = ze, Ut = Ut ? Pn(Ut) : null, Ut !== null && (Mr = l(Ut), cn = Ut.tag, Ut !== Mr || cn !== 5 && cn !== 27 && cn !== 6) && (Ut = null)) : (Qe = null, Ut = ze), Qe !== Ut)) {
-              if (cn = lc, st = "onMouseLeave", Se = "onMouseEnter", Me = "mouse", (r === "pointerout" || r === "pointerover") && (cn = pc, st = "onPointerLeave", Se = "onPointerEnter", Me = "pointer"), Mr = Qe == null ? je : _a(Qe), Re = Ut == null ? je : _a(Ut), je = new cn(st, Me + "leave", Qe, o, at), je.target = Mr, je.relatedTarget = Re, st = null, Pn(at) === ze && (cn = new cn(Se, Me + "enter", Ut, o, at), cn.target = Re, cn.relatedTarget = Mr, st = cn), Mr = st, Qe && Ut) t: {
-                for (cn = rg, Se = Qe, Me = Ut, Re = 0, st = Se; st; st = cn(st)) Re++;
+            if (je = r === "mouseover" || r === "pointerover", Ye = r === "mouseout" || r === "pointerout", je && o !== kt && (Ut = o.relatedTarget || o.fromElement) && (Pn(Ut) || Ut[Et])) break e;
+            if ((Ye || je) && (je = at.window === at ? at : (je = at.ownerDocument) ? je.defaultView || je.parentWindow : window, Ye ? (Ut = o.relatedTarget || o.toElement, Ye = ze, Ut = Ut ? Pn(Ut) : null, Ut !== null && (Mr = l(Ut), cn = Ut.tag, Ut !== Mr || cn !== 5 && cn !== 27 && cn !== 6) && (Ut = null)) : (Ye = null, Ut = ze), Ye !== Ut)) {
+              if (cn = lc, st = "onMouseLeave", Se = "onMouseEnter", Me = "mouse", (r === "pointerout" || r === "pointerover") && (cn = pc, st = "onPointerLeave", Se = "onPointerEnter", Me = "pointer"), Mr = Ye == null ? je : _a(Ye), Re = Ut == null ? je : _a(Ut), je = new cn(st, Me + "leave", Ye, o, at), je.target = Mr, je.relatedTarget = Re, st = null, Pn(at) === ze && (cn = new cn(Se, Me + "enter", Ut, o, at), cn.target = Re, cn.relatedTarget = Mr, st = cn), Mr = st, Ye && Ut) t: {
+                for (cn = rg, Se = Ye, Me = Ut, Re = 0, st = Se; st; st = cn(st)) Re++;
                 st = 0;
                 for (var en = Me; en; en = cn(en)) st++;
                 for (; 0 < Re - st; ) Se = cn(Se), Re--;
@@ -7086,17 +7086,17 @@ Error generating stack: ` + p.message + `
                 cn = null;
               }
               else cn = null;
-              Qe !== null && xm(lt, je, Qe, cn, false), Ut !== null && Mr !== null && xm(lt, Mr, Ut, cn, true);
+              Ye !== null && xm(lt, je, Ye, cn, false), Ut !== null && Mr !== null && xm(lt, Mr, Ut, cn, true);
             }
           }
           e: {
-            if (je = ze ? _a(ze) : window, Qe = je.nodeName && je.nodeName.toLowerCase(), Qe === "select" || Qe === "input" && je.type === "file") var Zn = bo;
+            if (je = ze ? _a(ze) : window, Ye = je.nodeName && je.nodeName.toLowerCase(), Ye === "select" || Ye === "input" && je.type === "file") var Zn = bo;
             else if (mi(je)) if (fl) Zn = vo;
             else {
               Zn = Xa;
               var Qt = yo;
             }
-            else Qe = je.nodeName, !Qe || Qe.toLowerCase() !== "input" || je.type !== "checkbox" && je.type !== "radio" ? ze && Tt(ze.elementType) && (Zn = bo) : Zn = wo;
+            else Ye = je.nodeName, !Ye || Ye.toLowerCase() !== "input" || je.type !== "checkbox" && je.type !== "radio" ? ze && Tt(ze.elementType) && (Zn = bo) : Zn = wo;
             if (Zn && (Zn = Zn(r, ze))) {
               dl(lt, Zn, o, at);
               break e;
@@ -7587,9 +7587,9 @@ Error generating stack: ` + p.message + `
           break;
         case "input":
           var b = null, v = null, F = null, ne = null, be = null, ze = null, at = null;
-          for (Qe in o) {
-            var lt = o[Qe];
-            if (o.hasOwnProperty(Qe) && lt != null) switch (Qe) {
+          for (Ye in o) {
+            var lt = o[Ye];
+            if (o.hasOwnProperty(Ye) && lt != null) switch (Ye) {
               case "checked":
                 break;
               case "value":
@@ -7597,47 +7597,47 @@ Error generating stack: ` + p.message + `
               case "defaultValue":
                 be = lt;
               default:
-                p.hasOwnProperty(Qe) || _e(r, i, Qe, null, p, lt);
+                p.hasOwnProperty(Ye) || _e(r, i, Ye, null, p, lt);
             }
           }
           for (var je in p) {
-            var Qe = p[je];
-            if (lt = o[je], p.hasOwnProperty(je) && (Qe != null || lt != null)) switch (je) {
+            var Ye = p[je];
+            if (lt = o[je], p.hasOwnProperty(je) && (Ye != null || lt != null)) switch (je) {
               case "type":
-                v = Qe;
+                v = Ye;
                 break;
               case "name":
-                b = Qe;
+                b = Ye;
                 break;
               case "checked":
-                ze = Qe;
+                ze = Ye;
                 break;
               case "defaultChecked":
-                at = Qe;
+                at = Ye;
                 break;
               case "value":
-                F = Qe;
+                F = Ye;
                 break;
               case "defaultValue":
-                ne = Qe;
+                ne = Ye;
                 break;
               case "children":
               case "dangerouslySetInnerHTML":
-                if (Qe != null) throw Error(a(137, i));
+                if (Ye != null) throw Error(a(137, i));
                 break;
               default:
-                Qe !== lt && _e(r, i, je, Qe, p, lt);
+                Ye !== lt && _e(r, i, je, Ye, p, lt);
             }
           }
           qa(r, F, ne, be, ze, at, v, b);
           return;
         case "select":
-          Qe = F = ne = je = null;
+          Ye = F = ne = je = null;
           for (v in o) if (be = o[v], o.hasOwnProperty(v) && be != null) switch (v) {
             case "value":
               break;
             case "multiple":
-              Qe = be;
+              Ye = be;
             default:
               p.hasOwnProperty(v) || _e(r, i, v, null, p, be);
           }
@@ -7653,10 +7653,10 @@ Error generating stack: ` + p.message + `
             default:
               v !== be && _e(r, i, b, v, p, be);
           }
-          i = ne, o = F, p = Qe, je != null ? z(r, !!o, je, false) : !!p != !!o && (i != null ? z(r, !!o, i, true) : z(r, !!o, o ? [] : "", false));
+          i = ne, o = F, p = Ye, je != null ? z(r, !!o, je, false) : !!p != !!o && (i != null ? z(r, !!o, i, true) : z(r, !!o, o ? [] : "", false));
           return;
         case "textarea":
-          Qe = je = null;
+          Ye = je = null;
           for (ne in o) if (b = o[ne], o.hasOwnProperty(ne) && b != null && !p.hasOwnProperty(ne)) switch (ne) {
             case "value":
               break;
@@ -7670,7 +7670,7 @@ Error generating stack: ` + p.message + `
               je = b;
               break;
             case "defaultValue":
-              Qe = b;
+              Ye = b;
               break;
             case "children":
               break;
@@ -7680,7 +7680,7 @@ Error generating stack: ` + p.message + `
             default:
               b !== v && _e(r, i, F, b, p, v);
           }
-          oe(r, je, Qe);
+          oe(r, je, Ye);
           return;
         case "option":
           for (var Ut in o) if (je = o[Ut], o.hasOwnProperty(Ut) && je != null && !p.hasOwnProperty(Ut)) switch (Ut) {
@@ -7690,12 +7690,12 @@ Error generating stack: ` + p.message + `
             default:
               _e(r, i, Ut, null, p, je);
           }
-          for (be in p) if (je = p[be], Qe = o[be], p.hasOwnProperty(be) && je !== Qe && (je != null || Qe != null)) switch (be) {
+          for (be in p) if (je = p[be], Ye = o[be], p.hasOwnProperty(be) && je !== Ye && (je != null || Ye != null)) switch (be) {
             case "selected":
               r.selected = je && typeof je != "function" && typeof je != "symbol";
               break;
             default:
-              _e(r, i, be, je, p, Qe);
+              _e(r, i, be, je, p, Ye);
           }
           return;
         case "img":
@@ -7714,24 +7714,24 @@ Error generating stack: ` + p.message + `
         case "wbr":
         case "menuitem":
           for (var cn in o) je = o[cn], o.hasOwnProperty(cn) && je != null && !p.hasOwnProperty(cn) && _e(r, i, cn, null, p, je);
-          for (ze in p) if (je = p[ze], Qe = o[ze], p.hasOwnProperty(ze) && je !== Qe && (je != null || Qe != null)) switch (ze) {
+          for (ze in p) if (je = p[ze], Ye = o[ze], p.hasOwnProperty(ze) && je !== Ye && (je != null || Ye != null)) switch (ze) {
             case "children":
             case "dangerouslySetInnerHTML":
               if (je != null) throw Error(a(137, i));
               break;
             default:
-              _e(r, i, ze, je, p, Qe);
+              _e(r, i, ze, je, p, Ye);
           }
           return;
         default:
           if (Tt(i)) {
             for (var Mr in o) je = o[Mr], o.hasOwnProperty(Mr) && je !== void 0 && !p.hasOwnProperty(Mr) && Pe(r, i, Mr, void 0, p, je);
-            for (at in p) je = p[at], Qe = o[at], !p.hasOwnProperty(at) || je === Qe || je === void 0 && Qe === void 0 || Pe(r, i, at, je, p, Qe);
+            for (at in p) je = p[at], Ye = o[at], !p.hasOwnProperty(at) || je === Ye || je === void 0 && Ye === void 0 || Pe(r, i, at, je, p, Ye);
             return;
           }
       }
       for (var Se in o) je = o[Se], o.hasOwnProperty(Se) && je != null && !p.hasOwnProperty(Se) && _e(r, i, Se, null, p, je);
-      for (lt in p) je = p[lt], Qe = o[lt], !p.hasOwnProperty(lt) || je === Qe || je == null && Qe == null || _e(r, i, lt, je, p, Qe);
+      for (lt in p) je = p[lt], Ye = o[lt], !p.hasOwnProperty(lt) || je === Ye || je == null && Ye == null || _e(r, i, lt, je, p, Ye);
     }
     function mt(r) {
       switch (r) {
@@ -47012,7 +47012,7 @@ ${y}${$}` + x.repeat(h) + `${y}`, E;
       I,
       g
     ]);
-    return Ye.jsx(qy.Provider, {
+    return Qe.jsx(qy.Provider, {
       value: k,
       children: e
     });
@@ -47568,7 +47568,7 @@ ${t.text}`).join(`
 `);
   }
   async function vP(e) {
-    const n = await pf(() => import("./index-BT_Y-iPH.js").then((s) => s.i), []), t = await e.arrayBuffer();
+    const n = await pf(() => import("./index-QBMw8SoW.js").then((s) => s.i), []), t = await e.arrayBuffer();
     return (await n.extractRawText({
       arrayBuffer: t
     })).value;
@@ -47721,7 +47721,7 @@ ${t.text}`).join(`
     return e < 1024 ? `${e} B` : e < 1024 * 1024 ? `${(e / 1024).toFixed(1)} KB` : `${(e / (1024 * 1024)).toFixed(1)} MB`;
   }
   function AP({ file: e }) {
-    return Ye.jsxs("div", {
+    return Qe.jsxs("div", {
       className: "animate-fade-up",
       style: {
         display: "flex",
@@ -47734,20 +47734,20 @@ ${t.text}`).join(`
         fontSize: "0.8rem"
       },
       children: [
-        Ye.jsx(Qk, {
+        Qe.jsx(Qk, {
           size: 14,
           style: {
             color: "var(--accent-light)",
             flexShrink: 0
           }
         }),
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           style: {
             flex: 1,
             overflow: "hidden"
           },
           children: [
-            Ye.jsx("div", {
+            Qe.jsx("div", {
               className: "truncate",
               style: {
                 color: "var(--text-primary)",
@@ -47755,7 +47755,7 @@ ${t.text}`).join(`
               },
               children: e.name
             }),
-            Ye.jsxs("div", {
+            Qe.jsxs("div", {
               style: {
                 color: "var(--text-muted)"
               },
@@ -47764,7 +47764,7 @@ ${t.text}`).join(`
                 e.chunks > 0 && ` \xB7 ${e.chunks} chunks`
               ]
             }),
-            e.status === "error" && e.error && Ye.jsxs("div", {
+            e.status === "error" && e.error && Qe.jsxs("div", {
               style: {
                 color: "var(--red)",
                 fontSize: "0.7rem",
@@ -47777,25 +47777,25 @@ ${t.text}`).join(`
             })
           ]
         }),
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           style: {
             flexShrink: 0
           },
           children: [
-            e.status === "processing" && Ye.jsx(mC, {
+            e.status === "processing" && Qe.jsx(mC, {
               size: 14,
               className: "animate-spin",
               style: {
                 color: "var(--amber)"
               }
             }),
-            e.status === "done" && Ye.jsx(pC, {
+            e.status === "done" && Qe.jsx(pC, {
               size: 14,
               style: {
                 color: "var(--green)"
               }
             }),
-            e.status === "error" && Ye.jsx(Gk, {
+            e.status === "error" && Qe.jsx(Gk, {
               size: 14,
               style: {
                 color: "var(--red)"
@@ -47818,15 +47818,15 @@ ${t.text}`).join(`
     }, g = t.state === "parsing" || t.state === "embedding" || t.state === "initialising", y = async () => {
       await n(), u();
     };
-    return Ye.jsxs("div", {
+    return Qe.jsxs("div", {
       className: "flex flex-col gap-4 h-full",
       children: [
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           className: "flex items-center justify-between",
           children: [
-            Ye.jsxs("div", {
+            Qe.jsxs("div", {
               children: [
-                Ye.jsx("h2", {
+                Qe.jsx("h2", {
                   style: {
                     color: "var(--text-primary)",
                     fontSize: "0.95rem",
@@ -47834,7 +47834,7 @@ ${t.text}`).join(`
                   },
                   children: "Documents"
                 }),
-                s > 0 && Ye.jsxs("p", {
+                s > 0 && Qe.jsxs("p", {
                   style: {
                     color: "var(--text-muted)",
                     fontSize: "0.72rem",
@@ -47847,13 +47847,13 @@ ${t.text}`).join(`
                 })
               ]
             }),
-            a.length > 0 && Ye.jsxs("button", {
+            a.length > 0 && Qe.jsxs("button", {
               className: "btn btn-danger btn-sm",
               onClick: y,
               disabled: g,
               title: "Clear all documents and chat",
               children: [
-                Ye.jsx(iP, {
+                Qe.jsx(iP, {
                   size: 12
                 }),
                 "Clear All"
@@ -47861,7 +47861,7 @@ ${t.text}`).join(`
             })
           ]
         }),
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           onDragOver: h,
           onDrop: m,
           onClick: () => {
@@ -47885,7 +47885,7 @@ ${t.text}`).join(`
             x.currentTarget.style.borderColor = "var(--border)";
           },
           children: [
-            Ye.jsx("input", {
+            Qe.jsx("input", {
               ref: d,
               type: "file",
               accept: ".txt,.md,.pdf,.docx",
@@ -47895,17 +47895,17 @@ ${t.text}`).join(`
               },
               onChange: (x) => x.target.files && _(x.target.files)
             }),
-            g ? Ye.jsxs("div", {
+            g ? Qe.jsxs("div", {
               className: "flex flex-col items-center gap-2",
               children: [
-                Ye.jsx(mC, {
+                Qe.jsx(mC, {
                   size: 24,
                   className: "animate-spin",
                   style: {
                     color: "var(--accent-light)"
                   }
                 }),
-                Ye.jsxs("p", {
+                Qe.jsxs("p", {
                   style: {
                     fontSize: "0.8rem",
                     color: "var(--text-secondary)"
@@ -47916,13 +47916,13 @@ ${t.text}`).join(`
                     t.state === "embedding" && `Embedding ${t.progress ?? 0}%\u2026`
                   ]
                 }),
-                t.state === "embedding" && Ye.jsx("div", {
+                t.state === "embedding" && Qe.jsx("div", {
                   className: "progress-track w-full",
                   style: {
                     maxWidth: "160px",
                     marginTop: "0.5rem"
                   },
-                  children: Ye.jsx("div", {
+                  children: Qe.jsx("div", {
                     className: "progress-fill",
                     style: {
                       width: `${t.progress ?? 0}%`
@@ -47930,16 +47930,16 @@ ${t.text}`).join(`
                   })
                 })
               ]
-            }) : t.state === "done" ? Ye.jsxs("div", {
+            }) : t.state === "done" ? Qe.jsxs("div", {
               className: "flex flex-col items-center gap-2 animate-bounce-in",
               children: [
-                Ye.jsx(pC, {
+                Qe.jsx(pC, {
                   size: 28,
                   style: {
                     color: "var(--green)"
                   }
                 }),
-                Ye.jsx("p", {
+                Qe.jsx("p", {
                   style: {
                     fontSize: "0.85rem",
                     color: "var(--text-primary)",
@@ -47947,7 +47947,7 @@ ${t.text}`).join(`
                   },
                   children: "Ingestion Complete!"
                 }),
-                Ye.jsxs("p", {
+                Qe.jsxs("p", {
                   style: {
                     fontSize: "0.72rem",
                     color: "var(--text-muted)"
@@ -47958,16 +47958,16 @@ ${t.text}`).join(`
                   ]
                 })
               ]
-            }) : Ye.jsxs("div", {
+            }) : Qe.jsxs("div", {
               className: "flex flex-col items-center gap-2",
               children: [
-                Ye.jsx(oP, {
+                Qe.jsx(oP, {
                   size: 24,
                   style: {
                     color: "var(--text-muted)"
                   }
                 }),
-                Ye.jsx("p", {
+                Qe.jsx("p", {
                   style: {
                     fontSize: "0.82rem",
                     color: "var(--text-secondary)",
@@ -47975,7 +47975,7 @@ ${t.text}`).join(`
                   },
                   children: "Drop files or click to browse"
                 }),
-                Ye.jsx("p", {
+                Qe.jsx("p", {
                   style: {
                     fontSize: "0.72rem",
                     color: "var(--text-muted)"
@@ -47986,16 +47986,16 @@ ${t.text}`).join(`
             })
           ]
         }),
-        a.length > 0 && Ye.jsx("div", {
+        a.length > 0 && Qe.jsx("div", {
           className: "flex flex-col gap-2 overflow-y-auto",
           style: {
             flex: 1
           },
-          children: a.map((x) => Ye.jsx(AP, {
+          children: a.map((x) => Qe.jsx(AP, {
             file: x
           }, x.name))
         }),
-        l && Ye.jsxs("div", {
+        l && Qe.jsxs("div", {
           className: "flex items-center gap-2",
           style: {
             marginTop: "auto",
@@ -48003,13 +48003,13 @@ ${t.text}`).join(`
             borderTop: "1px solid var(--border)"
           },
           children: [
-            Ye.jsx(qk, {
+            Qe.jsx(qk, {
               size: 12,
               style: {
                 color: "var(--text-muted)"
               }
             }),
-            Ye.jsx("span", {
+            Qe.jsx("span", {
               style: {
                 fontSize: "0.7rem",
                 color: "var(--text-muted)"
@@ -54053,11 +54053,11 @@ ${t.text}`).join(`
     const t = n.allowedElements, a = n.allowElement, s = n.components, l = n.disallowedElements, c = n.skipHtml, u = n.unwrapDisallowed, d = n.urlTransform || XN;
     for (const _ of GN) Object.hasOwn(n, _.from) && ("" + _.from + (_.to ? "use `" + _.to + "` instead" : "remove it") + jN + _.id, void 0);
     return c0(e, f), aO(e, {
-      Fragment: Ye.Fragment,
+      Fragment: Qe.Fragment,
       components: s,
       ignoreInvalidStyle: true,
-      jsx: Ye.jsx,
-      jsxs: Ye.jsxs,
+      jsx: Qe.jsx,
+      jsxs: Qe.jsxs,
       passKeys: true,
       passNode: true
     });
@@ -67746,23 +67746,23 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
   }
   function F$() {
     const { status: e, tps: n } = fh(), t = _C();
-    return e.state === "idle" ? null : e.state === "loading" ? Ye.jsxs("div", {
+    return e.state === "idle" ? null : e.state === "loading" ? Qe.jsxs("div", {
       className: "status-bar glass-card animate-fade-in",
       style: {
         padding: "0.75rem 1rem",
         marginBottom: "0.5rem"
       },
       children: [
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           className: "flex items-center gap-2",
           style: {
             marginBottom: e.progress != null ? "0.5rem" : 0
           },
           children: [
-            Ye.jsx("span", {
+            Qe.jsx("span", {
               className: "dot-pulse dot-amber"
             }),
-            Ye.jsx("span", {
+            Qe.jsx("span", {
               style: {
                 fontSize: "0.8rem",
                 color: "var(--text-secondary)"
@@ -67771,9 +67771,9 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             })
           ]
         }),
-        e.progress != null && Ye.jsx("div", {
+        e.progress != null && Qe.jsx("div", {
           className: "progress-track",
-          children: Ye.jsx("div", {
+          children: Qe.jsx("div", {
             className: "progress-fill",
             style: {
               width: `${e.progress}%`
@@ -67781,14 +67781,14 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
           })
         })
       ]
-    }) : e.state === "error" ? Ye.jsx("div", {
+    }) : e.state === "error" ? Qe.jsx("div", {
       className: "glass-card animate-fade-in",
       style: {
         padding: "0.6rem 1rem",
         marginBottom: "0.5rem",
         borderColor: "rgba(239,68,68,0.3)"
       },
-      children: Ye.jsxs("span", {
+      children: Qe.jsxs("span", {
         style: {
           fontSize: "0.8rem",
           color: "var(--red)"
@@ -67798,7 +67798,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
           e.error
         ]
       })
-    }) : e.state === "ready" ? Ye.jsxs("div", {
+    }) : e.state === "ready" ? Qe.jsxs("div", {
       className: "flex items-center gap-2",
       style: {
         justifyContent: "center",
@@ -67806,10 +67806,10 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
         marginBottom: "0.25rem"
       },
       children: [
-        Ye.jsx("span", {
+        Qe.jsx("span", {
           className: "dot-pulse dot-green"
         }),
-        Ye.jsxs("span", {
+        Qe.jsxs("span", {
           style: {
             fontSize: "0.75rem",
             color: "var(--text-muted)"
@@ -67824,12 +67824,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
   }
   function B$({ text: e }) {
     const [n, t] = fn.useState(false);
-    return e ? Ye.jsxs("div", {
+    return e ? Qe.jsxs("div", {
       style: {
         marginBottom: "0.5rem"
       },
       children: [
-        Ye.jsxs("button", {
+        Qe.jsxs("button", {
           onClick: () => t((a) => !a),
           style: {
             display: "flex",
@@ -67845,15 +67845,15 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             fontWeight: 600
           },
           children: [
-            n ? Ye.jsx(fC, {
+            n ? Qe.jsx(fC, {
               size: 12
-            }) : Ye.jsx(dC, {
+            }) : Qe.jsx(dC, {
               size: 12
             }),
             "Reasoning"
           ]
         }),
-        n && Ye.jsx("div", {
+        n && Qe.jsx("div", {
           className: "animate-fade-in",
           style: {
             marginTop: "0.4rem",
@@ -67873,12 +67873,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
   }
   function U$({ sources: e }) {
     const [n, t] = fn.useState(false);
-    return e.length ? Ye.jsxs("div", {
+    return e.length ? Qe.jsxs("div", {
       style: {
         marginTop: "0.5rem"
       },
       children: [
-        Ye.jsxs("button", {
+        Qe.jsxs("button", {
           onClick: () => t((a) => !a),
           style: {
             display: "flex",
@@ -67894,25 +67894,25 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             fontWeight: 600
           },
           children: [
-            Ye.jsx(Rk, {
+            Qe.jsx(Rk, {
               size: 10
             }),
             e.length,
             " source",
             e.length !== 1 ? "s" : "",
-            n ? Ye.jsx(fC, {
+            n ? Qe.jsx(fC, {
               size: 10
-            }) : Ye.jsx(dC, {
+            }) : Qe.jsx(dC, {
               size: 10
             })
           ]
         }),
-        n && Ye.jsx("div", {
+        n && Qe.jsx("div", {
           className: "animate-fade-in flex flex-col gap-2",
           style: {
             marginTop: "0.4rem"
           },
-          children: e.map((a, s) => Ye.jsxs("div", {
+          children: e.map((a, s) => Qe.jsxs("div", {
             style: {
               background: "var(--bg-base)",
               border: "1px solid var(--border)",
@@ -67921,7 +67921,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
               fontSize: "0.75rem"
             },
             children: [
-              Ye.jsxs("div", {
+              Qe.jsxs("div", {
                 style: {
                   color: "var(--accent-2)",
                   fontWeight: 600,
@@ -67935,7 +67935,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                   "% match"
                 ]
               }),
-              Ye.jsx("div", {
+              Qe.jsx("div", {
                 style: {
                   color: "var(--text-muted)",
                   lineHeight: 1.6
@@ -67954,13 +67954,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
         a(true), setTimeout(() => a(false), 1800);
       });
     };
-    return Ye.jsxs("div", {
+    return Qe.jsxs("div", {
       style: {
         position: "relative",
         margin: "0.6rem 0"
       },
       children: [
-        Ye.jsxs("button", {
+        Qe.jsxs("button", {
           onClick: l,
           title: "Copy code",
           style: {
@@ -67980,15 +67980,15 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             zIndex: 1
           },
           children: [
-            t ? Ye.jsx(Fk, {
+            t ? Qe.jsx(Fk, {
               size: 11
-            }) : Ye.jsx(Hk, {
+            }) : Qe.jsx(Hk, {
               size: 11
             }),
             t ? "Copied!" : "Copy"
           ]
         }),
-        Ye.jsx("pre", {
+        Qe.jsx("pre", {
           className: e,
           style: {
             margin: 0,
@@ -68000,7 +68000,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             background: "var(--bg-base)",
             border: "1px solid var(--border)"
           },
-          children: Ye.jsx("code", {
+          children: Qe.jsx("code", {
             className: e,
             children: n
           })
@@ -68010,13 +68010,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
   }
   function V$({ msg: e, isStreaming: n }) {
     const t = e.role === "user";
-    return Ye.jsx("div", {
+    return Qe.jsx("div", {
       className: "animate-fade-up",
       style: {
         display: "flex",
         justifyContent: t ? "flex-end" : "flex-start"
       },
-      children: Ye.jsxs("div", {
+      children: Qe.jsxs("div", {
         style: {
           maxWidth: "80%",
           background: t ? "linear-gradient(135deg, var(--accent), var(--accent-2))" : "var(--bg-card)",
@@ -68026,10 +68026,10 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
           boxShadow: t ? "0 0 20px var(--accent-glow)" : "var(--shadow-card)"
         },
         children: [
-          !t && e.reasoning && Ye.jsx(B$, {
+          !t && e.reasoning && Qe.jsx(B$, {
             text: e.reasoning
           }),
-          Ye.jsxs("div", {
+          Qe.jsxs("div", {
             className: `msg-content${n && !e.content ? " cursor-blink" : ""}`,
             style: {
               fontSize: "0.9rem",
@@ -68037,12 +68037,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
               lineHeight: 1.7
             },
             children: [
-              t ? Ye.jsx("span", {
+              t ? Qe.jsx("span", {
                 style: {
                   whiteSpace: "pre-wrap"
                 },
                 children: e.content
-              }) : Ye.jsx(WN, {
+              }) : Qe.jsx(WN, {
                 rehypePlugins: [
                   R$
                 ],
@@ -68050,29 +68050,29 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                   code({ className: a, children: s, ...l }) {
                     var _a, _b2, _c, _d;
                     return ((_b2 = (_a = l.node) == null ? void 0 : _a.position) == null ? void 0 : _b2.start.line) !== ((_d = (_c = l.node) == null ? void 0 : _c.position) == null ? void 0 : _d.end.line) || String(s).includes(`
-`) ? Ye.jsx(j$, {
+`) ? Qe.jsx(j$, {
                       className: a,
                       children: s
-                    }) : Ye.jsx("code", {
+                    }) : Qe.jsx("code", {
                       className: "inline-code",
                       ...l,
                       children: s
                     });
                   },
                   pre({ children: a }) {
-                    return Ye.jsx(Ye.Fragment, {
+                    return Qe.jsx(Qe.Fragment, {
                       children: a
                     });
                   }
                 },
                 children: e.content || "\u2026"
               }),
-              n && e.content && Ye.jsx("span", {
+              n && e.content && Qe.jsx("span", {
                 className: "cursor-blink"
               })
             ]
           }),
-          !t && e.sources && Ye.jsx(U$, {
+          !t && e.sources && Qe.jsx(U$, {
             sources: e.sources
           })
         ]
@@ -68094,13 +68094,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
     }, [
       f
     ]), h = l ? s ? "Ask about your documents\u2026" : "Ask anything (no documents loaded)\u2026" : "Load the model to start chatting\u2026";
-    return Ye.jsxs("form", {
+    return Qe.jsxs("form", {
       onSubmit: f,
       style: {
         position: "relative"
       },
       children: [
-        Ye.jsx("textarea", {
+        Qe.jsx("textarea", {
           ref: d,
           id: "chat-input",
           className: "input",
@@ -68120,30 +68120,30 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
           disabled: !l,
           autoFocus: true
         }),
-        Ye.jsx("div", {
+        Qe.jsx("div", {
           style: {
             position: "absolute",
             bottom: "0.6rem",
             right: "0.75rem"
           },
-          children: a ? Ye.jsx("button", {
+          children: a ? Qe.jsx("button", {
             type: "button",
             onClick: n,
             className: "btn btn-ghost btn-icon btn-sm",
             title: "Stop",
-            children: Ye.jsx(rP, {
+            children: Qe.jsx(rP, {
               size: 14,
               style: {
                 fill: "currentColor"
               }
             })
-          }) : Ye.jsx("button", {
+          }) : Qe.jsx("button", {
             type: "submit",
             id: "send-button",
             disabled: !l || !c.trim(),
             className: "btn btn-primary btn-sm",
             title: "Send",
-            children: Ye.jsx(tP, {
+            children: Qe.jsx(tP, {
               size: 14
             })
           })
@@ -68161,13 +68161,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
       });
     }, [
       e
-    ]), Ye.jsxs("div", {
+    ]), Qe.jsxs("div", {
       className: "flex flex-col h-full",
       style: {
         minHeight: 0
       },
       children: [
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           style: {
             display: "flex",
             alignItems: "center",
@@ -68178,10 +68178,10 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             flexShrink: 0
           },
           children: [
-            Ye.jsxs("div", {
+            Qe.jsxs("div", {
               className: "flex items-center gap-2",
               children: [
-                Ye.jsx("span", {
+                Qe.jsx("span", {
                   style: {
                     fontSize: "0.95rem",
                     fontWeight: 700,
@@ -68189,17 +68189,17 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                   },
                   children: "Chat"
                 }),
-                n && Ye.jsx("span", {
+                n && Qe.jsx("span", {
                   className: "dot-pulse dot-purple"
                 })
               ]
             }),
-            u && Ye.jsxs("button", {
+            u && Qe.jsxs("button", {
               className: "btn btn-ghost btn-sm",
               onClick: t,
               title: "New chat",
               children: [
-                Ye.jsx(Jk, {
+                Qe.jsx(Jk, {
                   size: 14
                 }),
                 "New chat"
@@ -68207,7 +68207,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             })
           ]
         }),
-        Ye.jsxs("main", {
+        Qe.jsxs("main", {
           ref: s,
           className: "overflow-y-auto flex-1",
           style: {
@@ -68215,20 +68215,20 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             minHeight: 0
           },
           children: [
-            !c && Ye.jsxs("div", {
+            !c && Qe.jsxs("div", {
               className: "flex flex-col items-center justify-center h-full animate-fade-in",
               style: {
                 gap: "0.75rem",
                 opacity: 0.5
               },
               children: [
-                Ye.jsx("div", {
+                Qe.jsx("div", {
                   style: {
                     fontSize: "2rem"
                   },
                   children: "\u{1F4AC}"
                 }),
-                Ye.jsx("p", {
+                Qe.jsx("p", {
                   style: {
                     color: "var(--text-muted)",
                     fontSize: "0.85rem",
@@ -68238,11 +68238,11 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                 })
               ]
             }),
-            Ye.jsx("div", {
+            Qe.jsx("div", {
               className: "flex flex-col gap-4",
               children: e.filter((d) => d.role !== "system").map((d, f, _) => {
                 const h = f === _.length - 1 && d.role === "assistant";
-                return Ye.jsx(V$, {
+                return Qe.jsx(V$, {
                   msg: d,
                   isStreaming: n && h
                 }, d.id);
@@ -68250,16 +68250,16 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             })
           ]
         }),
-        Ye.jsxs("footer", {
+        Qe.jsxs("footer", {
           style: {
             padding: "0.75rem 1.25rem",
             borderTop: "1px solid var(--border)",
             flexShrink: 0
           },
           children: [
-            Ye.jsx(F$, {}),
-            Ye.jsx(G$, {}),
-            Ye.jsx("p", {
+            Qe.jsx(F$, {}),
+            Qe.jsx(G$, {}),
+            Qe.jsx("p", {
               style: {
                 textAlign: "center",
                 fontSize: "0.68rem",
@@ -68274,7 +68274,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
     });
   }
   function H$({ onStart: e, isLoading: n, progress: t, error: a }) {
-    return Ye.jsxs("div", {
+    return Qe.jsxs("div", {
       className: "flex flex-col items-center justify-center h-full animate-fade-in",
       style: {
         gap: "2rem",
@@ -68282,12 +68282,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
         textAlign: "center"
       },
       children: [
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           style: {
             position: "relative"
           },
           children: [
-            Ye.jsx("div", {
+            Qe.jsx("div", {
               style: {
                 position: "absolute",
                 inset: "-24px",
@@ -68295,7 +68295,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                 borderRadius: "50%"
               }
             }),
-            Ye.jsx("div", {
+            Qe.jsx("div", {
               style: {
                 width: "72px",
                 height: "72px",
@@ -68307,7 +68307,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
                 boxShadow: "0 0 40px var(--accent-glow)",
                 position: "relative"
               },
-              children: Ye.jsx(xE, {
+              children: Qe.jsx(xE, {
                 size: 32,
                 color: "#fff",
                 strokeWidth: 2.5
@@ -68315,16 +68315,27 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             })
           ]
         }),
-        Ye.jsxs("div", {
+        Qe.jsxs("div", {
           children: [
-            Ye.jsx("h1", {
+            Qe.jsxs("h1", {
               className: "gradient-text",
               style: {
                 marginBottom: "0.5rem"
               },
-              children: "Barq RAG"
+              children: [
+                "Barq RAG",
+                Qe.jsx("span", {
+                  style: {
+                    fontSize: "0.7rem",
+                    opacity: 0.4,
+                    fontWeight: "normal",
+                    marginLeft: "0.5rem"
+                  },
+                  children: "v2.5 (Parallel Mesh)"
+                })
+              ]
             }),
-            Ye.jsxs("p", {
+            Qe.jsxs("p", {
               style: {
                 color: "var(--text-secondary)",
                 fontSize: "1rem",
@@ -68334,7 +68345,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
               children: [
                 "Upload documents and chat with them using",
                 " ",
-                Ye.jsx("strong", {
+                Qe.jsx("strong", {
                   style: {
                     color: "var(--accent-light)"
                   },
@@ -68346,14 +68357,14 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             })
           ]
         }),
-        Ye.jsx("div", {
+        Qe.jsx("div", {
           className: "flex flex-wrap justify-center gap-2",
           children: [
             "\u{1F9E0} Runs in browser",
             "\u{1F512} 100% private",
             "\u26A1 WebGPU accelerated",
             "\u{1F4C4} PDF \xB7 TXT \xB7 DOCX"
-          ].map((s) => Ye.jsx("span", {
+          ].map((s) => Qe.jsx("span", {
             style: {
               background: "var(--bg-card)",
               border: "1px solid var(--border)",
@@ -68365,7 +68376,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             children: s
           }, s))
         }),
-        a && Ye.jsxs("div", {
+        a && Qe.jsxs("div", {
           style: {
             background: "rgba(239,68,68,0.1)",
             border: "1px solid rgba(239,68,68,0.3)",
@@ -68377,7 +68388,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             textAlign: "left"
           },
           children: [
-            Ye.jsx("strong", {
+            Qe.jsx("strong", {
               style: {
                 display: "block",
                 marginBottom: "0.25rem"
@@ -68387,30 +68398,30 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             a
           ]
         }),
-        n ? Ye.jsxs("div", {
+        n ? Qe.jsxs("div", {
           className: "flex flex-col items-center gap-3",
           style: {
             width: "100%",
             maxWidth: "280px"
           },
           children: [
-            Ye.jsx("p", {
+            Qe.jsx("p", {
               style: {
                 color: "var(--text-secondary)",
                 fontSize: "0.85rem"
               },
               children: "Downloading model\u2026"
             }),
-            Ye.jsx("div", {
+            Qe.jsx("div", {
               className: "progress-track w-full",
-              children: Ye.jsx("div", {
+              children: Qe.jsx("div", {
                 className: "progress-fill",
                 style: {
                   width: `${t ?? 0}%`
                 }
               })
             }),
-            Ye.jsx("p", {
+            Qe.jsx("p", {
               style: {
                 color: "var(--text-muted)",
                 fontSize: "0.75rem"
@@ -68418,7 +68429,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
               children: "~800MB \xB7 cached after first load"
             })
           ]
-        }) : Ye.jsxs("button", {
+        }) : Qe.jsxs("button", {
           id: "load-model-btn",
           className: "btn btn-primary",
           onClick: e,
@@ -68427,13 +68438,13 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             fontSize: "1rem"
           },
           children: [
-            Ye.jsx(xE, {
+            Qe.jsx(xE, {
               size: 18
             }),
             a ? "Retry Loading Model" : "Load Model & Start"
           ]
         }),
-        Ye.jsx("p", {
+        Qe.jsx("p", {
           style: {
             fontSize: "0.72rem",
             color: "var(--text-muted)",
@@ -68457,7 +68468,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
     }, m = async () => {
       await t.clearAll();
     };
-    return l ? Ye.jsxs("div", {
+    return l ? Qe.jsxs("div", {
       className: "animate-fade-in",
       style: {
         display: "grid",
@@ -68468,7 +68479,7 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
         overflow: "hidden"
       },
       children: [
-        Ye.jsx("aside", {
+        Qe.jsx("aside", {
           className: "glass-card",
           style: {
             margin: "0.75rem 0 0.75rem 0.75rem",
@@ -68478,12 +68489,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             display: "flex",
             flexDirection: "column"
           },
-          children: Ye.jsx(kP, {
+          children: Qe.jsx(kP, {
             ingestion: t,
             onClearAll: m
           })
         }),
-        Ye.jsx("main", {
+        Qe.jsx("main", {
           className: "glass-card",
           style: {
             margin: "0.75rem",
@@ -68493,16 +68504,16 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
             flexDirection: "column",
             minHeight: 0
           },
-          children: Ye.jsx(W$, {})
+          children: Qe.jsx(W$, {})
         })
       ]
-    }) : Ye.jsx("div", {
+    }) : Qe.jsx("div", {
       style: {
         height: "100vh",
         width: "100vw",
         background: "var(--bg-base)"
       },
-      children: Ye.jsx(H$, {
+      children: Qe.jsx(H$, {
         onStart: h,
         isLoading: u,
         progress: f,
@@ -68511,12 +68522,12 @@ https://github.com/highlightjs/highlight.js/issues/2277`), nr = ot, xn = Ot), an
     });
   }
   function q$() {
-    return Ye.jsx(Ik, {
-      children: Ye.jsx(K$, {})
+    return Qe.jsx(Ik, {
+      children: Qe.jsx(K$, {})
     });
   }
-  FA.createRoot(document.getElementById("root")).render(Ye.jsx(fn.StrictMode, {
-    children: Ye.jsx(q$, {})
+  FA.createRoot(document.getElementById("root")).render(Qe.jsx(fn.StrictMode, {
+    children: Qe.jsx(q$, {})
   }));
 })();
 export {
