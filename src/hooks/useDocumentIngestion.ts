@@ -5,7 +5,7 @@
 import { useState, useCallback, useContext, useEffect } from 'react';
 import { parseFile } from '../lib/documentParser';
 import { chunkText } from '../lib/chunker';
-import { initDb, insertChunksParallel, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
+import { initDb, insertChunks, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
 import { LLMContext } from './LLMContext';
 
 export type IngestionStatus =
@@ -92,17 +92,18 @@ export function useDocumentIngestion() {
                 const chunks = chunkText(text, file.name);
                 console.log(`[Ingestion] Chunked into ${chunks.length} chunks.`);
 
-                // Step 3: Embed & insert in parallel across pool of Web Workers
+                // Step 3: Embed & insert all chunks in parallel.
+                // We no longer batch serially here; the vectorDb handles parallel distribution.
                 setStatus({ state: 'embedding', fileName: file.name, progress: 0 });
-                
-                await insertChunksParallel(chunks, (progress) => {
+                console.log(`[Ingestion] Inserting ${chunks.length} chunks in parallel...`);
+                await insertChunks(chunks, (progress) => {
                     setStatus({
                         state: 'embedding',
                         fileName: file.name,
                         progress: Math.round(progress * 100),
                     });
                 });
-
+                
                 const newCount = getCount();
                 setChunkCount(newCount);
 

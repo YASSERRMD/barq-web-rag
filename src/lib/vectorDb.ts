@@ -1,11 +1,10 @@
 /**
- * vectorDb.ts — High-performance RAG pipeline using barq-mesh-browser.
- *
- * This version uses a JS Worker Pool for parallel transformers.js embedding
- * combined with the barq-mesh-browser's AiMesh for storage and search.
+ * vectorDb.ts — High-speed Parallel RAG using barq-mesh-browser AiMesh.
+ * 
+ * Optimized for Parallelism in both Ingestion and Retrieval.
  */
 
-import { initEmbedder, embedText, EMBED_DIM } from './embedder';
+import { initEmbedder, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -24,21 +23,22 @@ let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
 
-const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
-let nextId = 0;
+// Local mapping for metadata (filenames, etc)
+// We sync this with the native IDs via current stack count
+const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise the WASM compute mesh.
+ * Initialise the Parallel AiMesh engine.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising barq-mesh-browser...');
+        console.log('[vectorDb] Initialising Parallel AiMesh Engine...');
         
         try {
-            // CRITICAL: Initialize base WASM modules FIRST
+            // CRITICAL: Order of WASM init
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
             
@@ -49,18 +49,18 @@ export async function initDb(): Promise<void> {
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
-            // Use the AiMesh for storage (provides BM25 + HNSW)
+            // Spawn the NATIVE worker pool for parallel processing
             const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
             // @ts-ignore
             meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             
-            console.log('[vectorDb] Mesh Store ready. Backend:', meshStore.backend());
+            console.log('[vectorDb] AiMesh Parallel Engine Ready. Backend:', meshStore.backend());
             
-            // Warm up main embedder
+            // Warm up JS embedder for query path (if needed)
             initEmbedder().catch(() => {});
             isInitialised = true;
         } catch (e) {
-            console.error('[vectorDb] Mesh initialisation failed:', e);
+            console.error('[vectorDb] Engine initialisation failed:', e);
             throw e;
         }
     })();
@@ -73,155 +73,91 @@ function ensureInit() {
 }
 
 /**
- * Parallel embedding using a dynamic worker pool in JS.
- * This ensures we use the correct transformers.js models and explicit ID control.
+ * Parallel document ingestion using the AiMesh native WorkerPool.
  */
-export async function insertChunksParallel(
+export async function insertChunks(
     metas: ChunkMeta[],
-    onProgress: (p: number) => void
+    onProgress: (p: number) => void = () => {}
 ): Promise<number> {
     ensureInit();
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => {
-        // @ts-ignore
-        return typeof m.text.toWellFormed === 'function' ? m.text.toWellFormed() : m.text;
+        // Sanitise for Rust JSON parser (lone surrogates)
+        const t = m.text as any;
+        return typeof t.toWellFormed === 'function' ? t.toWellFormed() : t;
     });
 
-    const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
-    const chunksPerWorker = Math.ceil(texts.length / numWorkers);
-
-    console.log(`[vectorDb] Starting parallel JS ingestion for ${texts.length} chunks.`);
-
-    let completed = 0;
-    const workerPromises = Array.from({ length: numWorkers }).map((_, i) => {
-        return new Promise<Float32Array[]>((resolve, reject) => {
-            const start = i * chunksPerWorker;
-            const end = Math.min(start + chunksPerWorker, texts.length);
-            const batch = texts.slice(start, end);
-
-            if (batch.length === 0) {
-                resolve([]);
-                return;
-            }
-
-            const worker = new Worker(
-                new URL('../workers/embed.worker.ts', import.meta.url),
-                { type: 'module' }
-            );
-
-            worker.onmessage = (e) => {
-                const data = e.data;
-                if (data.type === 'progress') {
-                    completed += 1;
-                    onProgress(Math.min(completed / texts.length, 1));
-                } else if (data.type === 'done') {
-                    resolve(data.results);
-                    worker.terminate();
-                } else if (data.type === 'error') {
-                    reject(new Error(data.error));
-                    worker.terminate();
-                }
-            };
-
-            worker.onerror = (err) => {
-                reject(err);
-                worker.terminate();
-            };
-
-            worker.postMessage({ id: `worker-${i}`, texts: batch });
-        });
-    });
+    console.log(`[vectorDb] Dispatching ${texts.length} chunks to Parallel Ingestion Engine...`);
 
     try {
-        const results = await Promise.all(workerPromises);
-        const allEmbeddings = results.flat();
+        onProgress(0.1);
+        
+        // Track ID sequence before and after
+        const startIdx = meshStore.vector_count();
+        
+        // This is the High-Speed Native Parallel Ingestion call.
+        // It uses the underlying WorkerPool to embed and index chunks simultaneously.
+        await meshStore.ingest_texts(JSON.stringify(texts));
+        
+        onProgress(0.8);
 
-        if (allEmbeddings.length > 0) {
-            const flatVec = new Float32Array(allEmbeddings.length * EMBED_DIM);
-            const ids = new Uint32Array(allEmbeddings.length);
-
-            for (let i = 0; i < allEmbeddings.length; i++) {
-                const id = nextId + i;
-                ids[i] = id;
-                flatVec.set(allEmbeddings[i], i * EMBED_DIM);
-                metadataStore.set(id, { ...metas[i], vector: allEmbeddings[i] });
-            }
-
-            // High-speed batch upsert to WASM layer
-            // We use the BarqMeshWeb inner store upsert if available or the AiMesh equivalent
-            // AiMesh doesn't have upsert_vectors, so we should have kept the BarqMeshWeb instance too?
-            // Actually, we can just use search_vector and pass our embeddings.
-            
-            // Wait, I need to pass the vectors to the mesh!
-            // I'll search for 'upsert_vectors' in AiMesh. It doesn't have it.
-            // But BarqMeshWeb does! 
-            // I'll create a BarqMeshWeb instance INSTEAD of AiMesh since we're doing parallel JS.
-            
-            // Re-evaluating: The user wants parallel stuff using barq-mesh-browser.
-            // If AiMesh.ingest_texts failed, maybe it's because I didn't provide the model path?
-            
-            // I'll switch back to BarqMeshWeb for the vector storage part 
-            // because it handles explicit ID insertion which is crucial for RAG consistency.
-            
-            // @ts-ignore
-            const mod = await import('barq-mesh-web');
-            const store = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
-            await store.upsert_vectors(flatVec, ids);
-            meshStore = store; // Store it for search
-            
-            nextId += allEmbeddings.length;
+        // Sync metadata with the sequential IDs assigned by the engine
+        for (let i = 0; i < metas.length; i++) {
+            const id = startIdx + i;
+            metadataStore.set(id, metas[i]);
         }
+        
+        onProgress(1.0);
+        console.log(`[vectorDb] Parallel indexing complete. Total: ${meshStore.vector_count()}`);
     } catch (err) {
-        console.error('[vectorDb] Ingestion failed:', err);
+        console.error('[vectorDb] Parallel ingestion failed:', err);
         throw err;
     }
 
     return getCount();
 }
 
-/** Legacy/Serial fallback */
-export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
-    return insertChunksParallel(metas, () => {});
-}
-
-/** Semantic Search using mesh search_vector + local metadata */
+/**
+ * Parallelized Hybrid Search using the AiMesh native retrieval system.
+ * Combining keywords (BM25) and semantics (HNSW) in parallel.
+ */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
     if (metadataStore.size === 0) return [];
 
-    const queryVec = await embedText(query);
+    console.log(`[vectorDb] Parallel Retrieval: "${query}"`);
     
-    // search_vector returns JSON string of [{id, score}]
-    const rawIds = await meshStore.search_vector(queryVec, topK);
+    // AI Mesh retrieve_hybrid handles both query embedding and keyword search in parallel
+    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
     let topResults: Array<{ id: number; score: number }> = [];
-    try { topResults = JSON.parse(rawIds); } catch { topResults = []; }
+    try { topResults = JSON.parse(resultsJson); } catch { topResults = []; }
 
+    // RRF scores are smaller, so we rely on the caller's threshold adjustment
     return topResults.map((r: any) => {
         const id = r.id;
         const meta = metadataStore.get(id);
-        if (!meta) return null;
         
-        return { 
-            id, 
-            score: r.score, 
-            text: meta.text, 
-            metadata: meta 
+        return {
+            id,
+            score: r.score,
+            text: meta?.text || `[Chunk ${id}]`,
+            metadata: meta
         };
-    }).filter(Boolean) as SearchResult[];
+    });
 }
 
 export async function clearDb(): Promise<void> {
     ensureInit();
     await meshStore.clear();
     metadataStore.clear();
-    nextId = 0;
 }
 
 export function getCount(): number {
-    return metadataStore.size;
+    return meshStore?.vector_count() ?? 0;
 }
 
 export function getBackendInfo(): string {
-    return meshStore?.backend_info?.() ?? meshStore?.backend?.() ?? 'Inactive';
+    const b = meshStore?.backend?.() || 'Inactive';
+    return `${b} (Parallel Hybrid Mode)`;
 }
