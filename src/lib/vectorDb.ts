@@ -1,13 +1,9 @@
 /**
- * vectorDb.ts — Full RAG pipeline integrating barq-wasm SIMD + barq-vweb vector storage.
- *
- * Pipeline:
- *   text → transformers.js MiniLM embed → barq-wasm normalize → barq-vweb insert_vectors
- *   query → barq-wasm normalize → barq-vweb search_vector → barq-wasm cosine re-rank
+ * vectorDb.ts — Full RAG pipeline using barq-mesh-web (replaces manual vweb+wasm)
+ * and parallel Web Workers for chunking/embedding.
  */
 
-import { initBarqWasm, cosineSimilarity } from './barqWasm';
-import { initEmbedder, embedText, embedBatch, EMBED_DIM } from './embedder';
+import { initEmbedder, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -22,33 +18,29 @@ export interface ChunkMeta {
     text: string;
 }
 
-let wasmInstance: any = null;
+let meshStore: any = null; // BarqMeshWeb instance
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
+let WorkerModule: any = null;
 
-// Local JS store: maps sequential id → ChunkMeta (barq-vweb only returns ids on search)
 const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
 let nextId = 0;
 
-/**
- * Initialise barq-vweb, barq-wasm, and the embedder. Safe to call multiple times.
- */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        // 1. barq-wasm SIMD compute layer
-        await initBarqWasm();
-
-        // 2. barq-vweb vector database
-        const mod = await import('barq-vweb');
+        const mod = await import('barq-mesh-web');
         await (mod as any).default();
-        wasmInstance = new (mod as any).BarqVWeb('rag-session', null);
-        console.log('[barq-vweb] initialised —', wasmInstance.backend_info());
+        meshStore = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
+        
+        console.log('[barq-mesh-web] initialised —', meshStore.backend_info());
 
-        // 3. MiniLM embedder (lazy — will load on first use to not block LLM load)
-        // Don't await here to avoid blocking LLM; it will init on first ingestFiles call
+        // Pre-load worker module
+        WorkerModule = await import('../workers/embed.worker?worker');
+
+        // Lazy initialize the main thread embedder for query searching
         initEmbedder().catch((e) => console.warn('[embedder] warm-up failed:', e));
 
         isInitialised = true;
@@ -58,99 +50,137 @@ export async function initDb(): Promise<void> {
 }
 
 function ensureInit() {
-    if (!wasmInstance) throw new Error('vectorDb: call initDb() first');
+    if (!meshStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * Insert chunks into the vector database.
- * Embeds via MiniLM → normalizes via barq-wasm → stores via barq-vweb insert_vectors.
+ * Parallel embedding using a pool of Web Workers.
+ * Workers load transformers.js and embed chunks without blocking main thread.
  */
-export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
+export async function insertChunksParallel(
+    metas: ChunkMeta[],
+    onProgress: (p: number) => void
+): Promise<number> {
     ensureInit();
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => m.text);
+    
+    // Create worker pool
+    const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
+    const workers: Worker[] = [];
+    const chunksPerWorker = Math.ceil(texts.length / numWorkers);
 
-    // Embed all texts using real MiniLM model
-    const embeddings = await embedBatch(texts);
+    console.log(`[vectorDb] Spinning up ${numWorkers} Web Workers for embedding...`);
 
-    // Build flat Float32Array for barq-vweb insert_vectors
+    let totalCompleted = 0;
+
+    const workerPromises = Array.from({ length: numWorkers }).map((_, i) => {
+        return new Promise<Float32Array[]>((resolve, reject) => {
+            const worker = new WorkerModule.default();
+            workers.push(worker);
+
+            const startIdx = i * chunksPerWorker;
+            const endIdx = Math.min(startIdx + chunksPerWorker, texts.length);
+            const workerTexts = texts.slice(startIdx, endIdx);
+
+            if (workerTexts.length === 0) {
+                worker.terminate();
+                resolve([]);
+                return;
+            }
+
+            worker.onmessage = (e: MessageEvent) => {
+                const data = e.data;
+                if (data.type === 'progress') {
+                    // Approximate progress
+                    totalCompleted += 5; // e.g. chunk batch
+                    onProgress(Math.min(totalCompleted / texts.length, 1));
+                } else if (data.type === 'done') {
+                    resolve(data.results);
+                    worker.terminate();
+                } else if (data.type === 'error') {
+                    reject(new Error(data.error));
+                    worker.terminate();
+                }
+            };
+
+            worker.postMessage({ id: `worker-${i}`, texts: workerTexts });
+        });
+    });
+
+    const results = await Promise.all(workerPromises);
+    const allEmbeddings = results.flat();
+
     const flatVec = new Float32Array(metas.length * EMBED_DIM);
     const ids = new Uint32Array(metas.length);
 
-    for (let i = 0; i < embeddings.length; i++) {
+    for (let i = 0; i < allEmbeddings.length; i++) {
         const id = nextId + i;
         ids[i] = id;
-        // Each embedding is already barq-wasm normalized (unit length)
-        flatVec.set(embeddings[i], i * EMBED_DIM);
-
-        // Store metadata + vector locally for lookup
-        metadataStore.set(id, { ...metas[i], vector: embeddings[i] });
+        flatVec.set(allEmbeddings[i], i * EMBED_DIM);
+        metadataStore.set(id, { ...metas[i], vector: allEmbeddings[i] });
     }
 
     try {
-        await wasmInstance.insert_vectors(flatVec, ids, EMBED_DIM);
+        // Upsert via barq-mesh-web (handles normalize + vweb indexing in WASM!)
+        await meshStore.upsert_vectors(flatVec, ids, EMBED_DIM);
         nextId += metas.length;
     } catch (e) {
-        console.error('[vectorDb] insert_vectors failed:', e);
+        console.error('[vectorDb] upsert_vectors failed:', e);
     }
 
     return getCount();
 }
 
-/**
- * Semantic search using barq-vweb + barq-wasm cosine re-rank.
- * query → embed → normalize → barq-vweb search_vector → re-rank top results.
- */
+/** Backup serial insert fallback if needed */
+export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
+    return insertChunksParallel(metas, () => {});
+}
+
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
     if (metadataStore.size === 0) return [];
 
-    // Embed and normalize the query
+    // Embed the query in the main thread (fast enough for one sentence)
     const queryVec = await embedText(query);
 
-    // barq-vweb vector search
-    const raw = await wasmInstance.search_vector(queryVec, topK);
+    // barq-mesh-web handles normalization and the vector search
+    const rawStr = await meshStore.search_vector(queryVec, topK);
 
     let results: Array<{ id: number; score: number }> = [];
-    if (Array.isArray(raw)) {
-        results = raw;
-    } else if (typeof raw === 'string') {
-        try { results = JSON.parse(raw); } catch { results = []; }
-    }
+    try { results = JSON.parse(rawStr); } catch { results = []; }
 
-    // Map ids → ChunkMeta, re-rank with barq-wasm cosine similarity
+    const mod = await import('barq-mesh-web');
+
+    // Mapped results with re-rank tracking
     const mapped = results
         .map((r: any) => {
             const id = r.id ?? 0;
             const meta = metadataStore.get(id);
             if (!meta) return null;
-            // Re-rank using barq-wasm SIMD cosine similarity for accuracy
-            const score = cosineSimilarity(queryVec, meta.vector);
+            
+            // Re-rank using barq-mesh-web's native SIMD exported function
+            const score = mod.cosine_similarity_simd(queryVec, meta.vector);
             return { id, score, text: meta.text, metadata: meta };
         })
         .filter(Boolean) as SearchResult[];
 
-    // Sort by re-ranked score descending
     mapped.sort((a, b) => b.score - a.score);
-
     return mapped;
 }
 
-/** Clear all stored vectors and metadata. */
 export async function clearDb(): Promise<void> {
     ensureInit();
-    await wasmInstance.clear();
+    await meshStore.clear();
     metadataStore.clear();
     nextId = 0;
 }
 
-/** Number of vectors currently stored. */
 export function getCount(): number {
     return metadataStore.size;
 }
 
-/** Hardware backend string from barq-vweb. */
 export function getBackendInfo(): string {
-    return wasmInstance?.backend_info() ?? 'not initialised';
+    return meshStore?.backend_info() ?? 'not initialised';
 }

@@ -19,6 +19,6 @@ export default defineConfig({
         },
     },
     optimizeDeps: {
-        exclude: ['@huggingface/transformers', 'barq-vweb', 'barq-wasm'],
+        exclude: ['@huggingface/transformers', 'barq-vweb', 'barq-wasm', 'barq-mesh-web'],
     },
 })
