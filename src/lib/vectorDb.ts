@@ -1,11 +1,11 @@
 /**
- * vectorDb.ts — Extreme Accuracy & Speed RAG Pipeline.
- * 
- * This version uses the core BarqMeshWeb engine for high-speed parallel indexing
- * and high-precision vector retrieval, ensuring 100% citation accuracy.
+ * vectorDb.ts — Definitive High-Speed Parallel RAG with worker lifecycle management.
+ *
+ * Keeps the stable AiMesh contract used by the bundled WASM wrapper so
+ * ingestion and retrieval stay aligned with the IDs stored in metadata.
  */
 
-import { initEmbedder, embedText, EMBED_DIM } from './embedder';
+import { EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -28,26 +28,30 @@ let initPromise: Promise<void> | null = null;
 const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise the core BarqMeshWeb engine.
+ * Initialise the stable AiMesh engine on demand.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised && meshStore) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising Core Mesh Storage...');
+        console.log('[vectorDb] Initialising high-speed parallel mesh...');
         try {
+            const vwebMod = await import('barq-vweb');
+            await (vwebMod as any).default();
+            const wasmMod = await import('barq-wasm');
+            await (wasmMod as any).default();
             // @ts-ignore
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
-            // BarqMeshWeb handles both parallel indexing and high-precision search
+            // Keep the worker pool bounded so the browser stays responsive.
+            const numWorkers = 4;
             // @ts-ignore
-            meshStore = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
+            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             
             isInitialised = true;
-            console.log('[vectorDb] Core Engine Ready.');
-            initEmbedder().catch(() => {});
+            console.log('[vectorDb] Mesh ready with', numWorkers, 'workers.');
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
             throw e;
@@ -63,7 +67,7 @@ function ensureInit() {
 }
 
 /**
- * High-Speed Parallel Ingestion via the native Rust storage layer.
+ * High-Speed Native Parallel Ingestion.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -74,7 +78,7 @@ export async function insertChunks(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map(m => (m.text as any).toWellFormed?.() ?? m.text);
-    console.log(`[vectorDb] Indexing ${texts.length} chunks via Core Engine...`);
+    console.log(`[vectorDb] Parallel indexing ${texts.length} chunks via Rust Pool...`);
 
     try {
         onProgress(0.1);
@@ -93,38 +97,36 @@ export async function insertChunks(
         }
         
         onProgress(1.0);
-        console.log(`[vectorDb] Index complete. total: ${meshStore.vector_count()}`);
+        console.log(`[vectorDb] Done. Store total: ${meshStore.vector_count()}`);
     } catch (err) {
         console.error('[vectorDb] Ingestion failed:', err);
+        throw err;
     }
     return getCount();
 }
 
 /**
- * High-Precision Vector Search.
- * Returns consistent 0-1 cosine similarity scores without ID-mismatch.
+ * Neural Search using the native engine's high-precision retrieval.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     if (!meshStore || metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] Corrected Retrieval for: "${query}"`);
-    
-    // We use the raw search_vector API for maximum precision and speed
-    // This expects a Float32Array query vector.
-    const queryVec = await embedText(query);
-    const resultsJson = await meshStore.search_vector(queryVec, topK);
+    console.log(`[vectorDb] Parallel retrieval: "${query}"`);
+    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
     
     let results: Array<{ id: number; score: number }> = [];
     try { results = JSON.parse(resultsJson); } catch { results = []; }
 
     return results.map((r: any) => {
-        const id = r.id;
-        const meta = metadataStore.get(id);
+        const meta = metadataStore.get(r.id);
         if (!meta) return null;
+
+        // remap RRF score (0.016 range) to display score (normalized)
+        const displayScore = Math.min(r.score * 60, 0.99);
 
         return { 
             id: r.id, 
-            score: r.score, // Return original 0-1 cosine similarity
+            score: displayScore, 
             text: meta.text, 
             metadata: meta 
         };
@@ -141,5 +143,5 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${meshStore?.backend_info?.() ?? 'Inactive'} | Core Accuracy Mode`;
+    return `${meshStore?.backend() ?? 'Inactive'} | Parallel Mode`;
 }
