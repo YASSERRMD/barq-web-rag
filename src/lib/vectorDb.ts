@@ -5,7 +5,7 @@
  * rather than manual JS workers, ensuring maximum embedding speed.
  */
 
-import { initEmbedder, embedText, EMBED_DIM } from './embedder';
+import { initEmbedder, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -87,15 +87,21 @@ export async function insertChunksParallel(
     ensureInit();
     if (metas.length === 0) return getCount();
 
-    const texts = metas.map((m) => m.text);
+    const texts = metas.map((m) => {
+        // Ensure string is well-formed to prevent Rust JSON parse errors (lone surrogates)
+        // especially common when parsing raw PDF segments.
+        if (typeof (m.text as any).toWellFormed === 'function') {
+            return m.text.toWellFormed();
+        }
+        // Fallback for older environments: strip unpaired surrogates
+        return m.text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
+    });
     console.log(`[vectorDb] Starting NATIVE parallel ingestion for ${texts.length} chunks.`);
 
     try {
         // Step 1: Use the mesh's built-in parallel ingestion
-        // This is significantly faster as it uses Rust-orchestrated workers and SIMD.
-        onProgress(0.1); // Indicate start
+        onProgress(0.1); 
         
-        // We use the ingest_texts API which handles embedding internally via barq-vweb's shared ONNX
         const textsJson = JSON.stringify(texts);
         await meshStore.ingest_texts(textsJson);
         
