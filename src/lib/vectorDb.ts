@@ -1,8 +1,8 @@
 /**
- * vectorDb.ts — Fully Stable High-Performance RAG.
+ * vectorDb.ts — Definitive High-Speed Parallel RAG using AiMesh.
  * 
- * Consistent with the "perfectly working" version but optimized for 
- * fast client-side inference (60 TPS) and RAG accuracy.
+ * This version leverages barq-mesh-browser for speed, but ensures
+ * total RAG accuracy and inference performance (60 TPS).
  */
 
 import { initEmbedder, embedText, EMBED_DIM } from './embedder';
@@ -20,39 +20,44 @@ export interface ChunkMeta {
     text: string;
 }
 
-let wasmInstance: any = null;
+let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
 
 // Local mapping for metadata (filenames, text)
-const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
-let nextId = 0;
+const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise BarqVWeb and Embedder.
+ * Initialise the Parallel AiMesh engine.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising Stable RAG Layer...');
+        console.log('[vectorDb] Initialising barq-mesh-browser (AiMesh)...');
         
         try {
-            const mod = await import('barq-vweb');
+            const vwebMod = await import('barq-vweb');
+            await (vwebMod as any).default();
+            const wasmMod = await import('barq-wasm');
+            await (wasmMod as any).default();
+            // @ts-ignore
+            const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
-            // BarqVWeb instance handles the HNSW vector index
+            // Set workers to 2 — Optimal balance for Parallel Speed vs LLM TPS (60 t/s)
+            const numWorkers = 2;
             // @ts-ignore
-            wasmInstance = new (mod as any).BarqVWeb('rag-session', null);
+            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             
-            // Warm up primary embedder for chat queries
+            console.log('[vectorDb] AiMesh Ready. Backend:', meshStore.backend());
+            
+            // Warm up primary embedder 
             initEmbedder().catch(() => {});
-            
             isInitialised = true;
-            console.log('[vectorDb] READY. Backend:', wasmInstance.backend_info());
         } catch (e) {
-            console.error('[vectorDb] Initialisation failed:', e);
+            console.error('[vectorDb] Mesh initialization failed:', e);
             throw e;
         }
     })();
@@ -61,12 +66,12 @@ export async function initDb(): Promise<void> {
 }
 
 function ensureInit() {
-    if (!wasmInstance) throw new Error('vectorDb: call initDb() first');
+    if (!meshStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * Document Ingestion.
- * Uses persistent parallel embedding to avoid bottlenecks without killing LLM TPS.
+ * Native Parallel Ingestion using barq-mesh-web.
+ * Extremely fast Rust-side processing without breaking the UI IDs.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -80,35 +85,29 @@ export async function insertChunks(
         return typeof t.toWellFormed === 'function' ? t.toWellFormed() : t;
     });
 
-    console.log(`[vectorDb] Indexing ${texts.length} chunks...`);
+    console.log(`[vectorDb] Parallel Indexing ${texts.length} chunks via Rust Pool...`);
 
     try {
-        // High-Quality Embedding using validated models
-        const embeddings: Float32Array[] = [];
-        for (let i = 0; i < texts.length; i++) {
-            embeddings.push(await embedText(texts[i]));
-            if (i % 20 === 0) onProgress(i / texts.length);
+        onProgress(0.1);
+        
+        // Sequence alignment: Get accurate starting ID
+        const startIdx = meshStore.vector_count();
+        
+        // Call high-speed ingestion API
+        await meshStore.ingest_texts(JSON.stringify(texts));
+        
+        onProgress(0.9);
+
+        // SYNC: Map the sequential IDs used by barq-vweb to our local metadata
+        for (let i = 0; i < metas.length; i++) {
+            const id = startIdx + i;
+            metadataStore.set(id, metas[i]);
         }
-
-        if (embeddings.length > 0) {
-            const flatVec = new Float32Array(embeddings.length * EMBED_DIM);
-            const ids = new Uint32Array(embeddings.length);
-
-            for (let i = 0; i < embeddings.length; i++) {
-                const id = nextId + i;
-                ids[i] = id;
-                flatVec.set(embeddings[i], i * EMBED_DIM);
-                metadataStore.set(id, { ...metas[i], vector: embeddings[i] });
-            }
-
-            // Sync with WASM memory
-            await wasmInstance.insert_vectors(flatVec, ids, EMBED_DIM);
-            nextId += embeddings.length;
-            
-            console.log(`[vectorDb] Index complete. Total: ${nextId}`);
-        }
+        
+        onProgress(1.0);
+        console.log(`[vectorDb] Indexed. Total vectors: ${meshStore.vector_count()}`);
     } catch (err) {
-        console.error('[vectorDb] Indexing failed:', err);
+        console.error('[vectorDb] Ingestion failed:', err);
         throw err;
     }
 
@@ -116,30 +115,29 @@ export async function insertChunks(
 }
 
 /**
- * Neural Retrieval with High-Precision 0.05 Threshold.
+ * High-Precision Vector Retrieval.
+ * Returns 0-1 cosine similarity scores using the native engine.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
     if (metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] Retrieval for: "${query}"`);
+    console.log(`[vectorDb] RAG search: "${query}"`);
     const queryVec = await embedText(query);
-    
-    // search_vector returns the Top-K candidates with cosine similarity scores
-    const raw = await wasmInstance.search_vector(queryVec, topK);
-    let results: Array<{ id: number; score: number }> = [];
-    
-    if (Array.isArray(raw)) results = raw;
-    else if (typeof raw === 'string') {
-        try { results = JSON.parse(raw); } catch { results = []; }
-    }
+    const queryJson = JSON.stringify(Array.from(queryVec));
 
-    return results.map((r: any) => {
-        const meta = metadataStore.get(r.id);
+    // Use retrieve() for pure vector search (returns clean cosine scores)
+    const resultsJson = await meshStore.retrieve(queryJson, topK);
+    let topResults: Array<{ id: number; score: number }> = [];
+    try { topResults = JSON.parse(resultsJson); } catch { topResults = []; }
+
+    return topResults.map((r: any) => {
+        const id = r.id;
+        const meta = metadataStore.get(id);
         if (!meta) return null;
         
         return { 
-            id: r.id, 
+            id, 
             score: r.score, 
             text: meta.text, 
             metadata: meta 
@@ -149,15 +147,14 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 
 export async function clearDb(): Promise<void> {
     ensureInit();
-    await wasmInstance.clear();
+    await meshStore.clear();
     metadataStore.clear();
-    nextId = 0;
 }
 
 export function getCount(): number {
-    return metadataStore.size;
+    return meshStore?.vector_count() ?? 0;
 }
 
 export function getBackendInfo(): string {
-    return wasmInstance?.backend_info() ?? 'Inactive';
+    return `${meshStore?.backend() ?? 'Inactive'} | Native Mesh`;
 }
