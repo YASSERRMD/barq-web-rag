@@ -8,8 +8,8 @@ import { LLMContext } from './LLMContext';
 import { searchSimilar } from '../lib/vectorDb';
 import type { ChatMessage, SourceChunk } from './LLMContext';
 
-const TOP_K = 5;
-const MAX_CONTEXT_CHARS = 5000;
+const TOP_K = 4;
+const MAX_CONTEXT_CHARS = 4000;
 
 function buildSystemPrompt(chunks: SourceChunk[]): string {
     if (chunks.length === 0) {

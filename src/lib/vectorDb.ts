@@ -1,11 +1,11 @@
 /**
- * vectorDb.ts — Native barq-mesh-web RAG with parallel ingestion and hybrid search.
+ * vectorDb.ts — Native barq-mesh-web RAG with dense-first retrieval.
  *
- * Keep indexing and retrieval on the same native mesh store so the browser
- * does not depend on a separate embedding pipeline.
+ * Ingestion stays inside barq-mesh-web. Retrieval uses native vector search as
+ * the fast path and only falls back to hybrid text search if dense search fails.
  */
 
-const EMBED_DIM = 384;
+import { EMBED_DIM, embedText, warmQueryEmbedder } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -71,6 +71,9 @@ export async function initDb(onProgress?: (p: number) => void): Promise<void> {
 
             isInitialised = true;
             console.log(`[vectorDb] barq-mesh-web ready. Backend: ${meshStore.backend_info()}`);
+            void warmQueryEmbedder().catch((error) => {
+                console.warn('[vectorDb] Query embedder warmup failed:', error);
+            });
             onProgress?.(1);
         } catch (e) {
             meshStore = null;
@@ -131,9 +134,17 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 
     console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
 
-    const raw = await meshStore.retrieve_hybrid(query, topK);
-    const results = normalizeSearchResults(raw);
-    return mapResults(results);
+    try {
+        const queryVector = await embedText(query);
+        const raw = await meshStore.search_vector(queryVector, topK);
+        const denseResults = mapResults(normalizeSearchResults(raw), 'dense');
+        if (denseResults.length > 0) return denseResults;
+    } catch (error) {
+        console.warn('[vectorDb] Dense retrieval failed, falling back to hybrid search:', error);
+    }
+
+    const hybridRaw = await meshStore.retrieve_hybrid(query, topK);
+    return mapResults(normalizeSearchResults(hybridRaw), 'hybrid');
 }
 
 export async function clearDb(): Promise<void> {
@@ -162,7 +173,7 @@ function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
     return [];
 }
 
-function mapResults(results: NativeSearchResult[]): SearchResult[] {
+function mapResults(results: NativeSearchResult[], mode: 'dense' | 'hybrid'): SearchResult[] {
     return results
         .map((r, idx) => {
             const id = Number(r.id);
@@ -172,7 +183,7 @@ function mapResults(results: NativeSearchResult[]): SearchResult[] {
 
             return {
                 id: Number.isFinite(id) ? id : idx,
-                score: Number.isFinite(r.score) ? Math.min(r.score * 60, 0.99) : 0,
+                score: normalizeScore(r.score, mode),
                 text,
                 metadata: meta ?? {
                     sourceFile: 'unknown',
@@ -182,4 +193,10 @@ function mapResults(results: NativeSearchResult[]): SearchResult[] {
             };
         })
         .filter(Boolean) as SearchResult[];
+}
+
+function normalizeScore(score: number, mode: 'dense' | 'hybrid'): number {
+    if (!Number.isFinite(score)) return 0;
+    if (mode === 'hybrid') return Math.min(score * 60, 0.99);
+    return Math.max(0, Math.min(score, 0.99));
 }
