@@ -1,14 +1,12 @@
 /**
- * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
+ * vectorDb.ts - Native AiMesh RAG with parallel ingestion and hybrid search.
  *
- * Hot path:
- * - real MiniLM embeddings in a worker pool
- * - insert vectors through barq-mesh-web with explicit IDs
- * - search natively through barq-mesh-web
+ * This uses barq-mesh-web directly for both indexing and retrieval so the
+ * browser runs a single native mesh stack instead of a separate embedding
+ * pipeline plus vector store.
  */
 
-import { initBarqWasm } from './barqWasm';
-import { initEmbedder, initEmbedderWithProgress, embedBatch, embedText, EMBED_DIM } from './embedder';
+const EMBED_DIM = 384;
 
 export interface SearchResult {
     id: number;
@@ -30,10 +28,9 @@ type NativeSearchResult = {
     metadata?: ChunkMeta;
 };
 
-let dbStore: any = null;
+let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
-const INGEST_BATCH_SIZE = 48;
 
 // Local mapping for metadata synchronization.
 const metadataStore = new Map<number, ChunkMeta>();
@@ -42,47 +39,50 @@ function yieldToUi(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function getWorkerCount(): number {
+    if (typeof navigator === 'undefined') return 2;
+    const cores = navigator.hardwareConcurrency ?? 4;
+    if (cores >= 8) return 4;
+    if (cores >= 6) return 3;
+    return 2;
+}
+
 /**
- * Initialise the barq-mesh-web database on demand.
+ * Initialise the native AiMesh engine on demand.
  */
 export async function initDb(onProgress?: (p: number) => void): Promise<void> {
-    if (isInitialised && dbStore) {
+    if (isInitialised && meshStore) {
         onProgress?.(1);
         return;
     }
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising barq-mesh-web database...');
+        console.log('[vectorDb] Initialising native AiMesh...');
         try {
-            const embedInit = onProgress
-                ? initEmbedderWithProgress((progress, info) => {
-                    onProgress(Math.max(0, Math.min(progress, 1)));
-                    if (info?.file) {
-                        console.log(`[vectorDb] embedder warmup ${info.worker}: ${info.file}`);
-                    }
-                })
-                : initEmbedder();
+            onProgress?.(0.05);
 
-            const bootstrapDb = (async () => {
-                await initBarqWasm();
-                const [vwebMod, meshMod] = await Promise.all([
-                    import('barq-vweb'),
-                    import('barq-mesh-web'),
-                ]);
-                await (vwebMod as any).default();
-                await (meshMod as any).default();
+            const [vwebMod, wasmMod, meshMod] = await Promise.all([
+                import('barq-vweb'),
+                import('barq-wasm'),
+                import('barq-mesh-web'),
+            ]);
 
-                dbStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
-                await dbStore.clear();
-                metadataStore.clear();
-                console.log('[vectorDb] barq-mesh-web ready.');
-            })();
+            await (vwebMod as any).default();
+            await (wasmMod as any).default();
+            await (meshMod as any).default();
 
-            await Promise.all([bootstrapDb, embedInit]);
+            onProgress?.(0.4);
+
+            const workers = getWorkerCount();
+            meshStore = meshMod.AiMesh.create(workers, 'rag-session', EMBED_DIM);
+            metadataStore.clear();
+
             isInitialised = true;
+            console.log(`[vectorDb] AiMesh ready (${workers} workers). Backend: ${meshStore.backend()}`);
+            onProgress?.(1);
         } catch (e) {
-            dbStore = null;
+            meshStore = null;
             metadataStore.clear();
             isInitialised = false;
             console.error('[vectorDb] Init failed:', e);
@@ -96,11 +96,11 @@ export async function initDb(onProgress?: (p: number) => void): Promise<void> {
 }
 
 function ensureInit() {
-    if (!dbStore) throw new Error('vectorDb: call initDb() first');
+    if (!meshStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * Fast ingestion using worker-backed semantic embeddings and native barq-mesh-web indexing.
+ * High-speed ingestion using AiMesh's native worker pool and embedding layer.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -111,44 +111,22 @@ export async function insertChunks(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
-    console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
+    console.log(`[vectorDb] Ingesting ${texts.length} chunks via AiMesh...`);
 
     try {
-        onProgress(0.05);
+        onProgress(0.1);
 
-        const total = metas.length;
-        let processed = 0;
+        const startIdx = meshStore.vector_count();
+        await meshStore.ingest_texts(JSON.stringify(texts));
 
-        for (let offset = 0; offset < metas.length; offset += INGEST_BATCH_SIZE) {
-            const batchMetas = metas.slice(offset, offset + INGEST_BATCH_SIZE);
-            const batchTexts = batchMetas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
-            const vectors = await embedBatch(batchTexts);
-
-            const startIdx = dbStore.count();
-            const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
-            const ids = new Uint32Array(vectors.length);
-
-            for (let i = 0; i < vectors.length; i++) {
-                flatVectors.set(vectors[i], i * EMBED_DIM);
-                ids[i] = startIdx + i;
-            }
-
-            await dbStore.upsert_vectors(flatVectors, ids);
-
-            for (let i = 0; i < batchMetas.length; i++) {
-                metadataStore.set(ids[i], batchMetas[i]);
-            }
-
-            processed += batchMetas.length;
-            onProgress(Math.min(0.1 + (processed / total) * 0.85, 0.99));
-
-            if (processed < total) {
-                await yieldToUi();
-            }
+        for (let i = 0; i < metas.length; i++) {
+            metadataStore.set(startIdx + i, metas[i]);
         }
 
+        onProgress(0.9);
+        await yieldToUi();
         onProgress(1.0);
-        console.log(`[vectorDb] barq-mesh-web indexing complete. Total: ${dbStore.count()}`);
+        console.log(`[vectorDb] AiMesh indexing complete. Total: ${meshStore.vector_count()}`);
     } catch (err) {
         console.error('[vectorDb] Ingestion failed:', err);
         throw err;
@@ -158,16 +136,15 @@ export async function insertChunks(
 }
 
 /**
- * Semantic retrieval using barq-mesh-web's native vector search.
+ * Native hybrid retrieval using AiMesh.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    if (!dbStore || metadataStore.size === 0) return [];
+    if (!meshStore || metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
-    const queryVec = await embedText(query);
-    const raw = await dbStore.search_vector(queryVec, topK);
+    console.log(`[vectorDb] AiMesh retrieval: "${query}"`);
+    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
 
-    const results = normalizeSearchResults(raw);
+    const results = normalizeSearchResults(resultsJson);
 
     return results
         .map((r) => {
@@ -176,7 +153,7 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 
             return {
                 id: r.id,
-                score: r.score,
+                score: Math.min(r.score * 60, 0.99),
                 text: r.text ?? meta.text,
                 metadata: meta,
             };
@@ -185,7 +162,7 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 }
 
 export async function clearDb(): Promise<void> {
-    if (dbStore) await dbStore.clear();
+    if (meshStore) await meshStore.clear();
     metadataStore.clear();
 }
 
@@ -194,7 +171,7 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${dbStore?.backend_info?.() ?? 'Inactive'} | MiniLM worker pool`;
+    return `${meshStore?.backend?.() ?? 'Inactive'} | Parallel Mesh`;
 }
 
 function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
