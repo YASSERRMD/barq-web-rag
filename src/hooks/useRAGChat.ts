@@ -32,9 +32,8 @@ export function useRAGChat() {
     const ctx = useContext(LLMContext);
     if (!ctx) throw new Error('useRAGChat must be used within <LLMProvider>');
 
-    const { send: llmSend, messages, isGenerating, status, stop, clearChat, loadModel, tps } = ctx;
-
-    const hasDocuments = getCount() > 0;
+    const { send: llmSend, messages, isGenerating, status, stop, clearChat, loadModel, tps, indexedChunks } = ctx;
+    const hasDocuments = indexedChunks > 0;
 
     const send = useCallback(
         async (userText: string) => {

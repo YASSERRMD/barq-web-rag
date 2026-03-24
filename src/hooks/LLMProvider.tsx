@@ -52,6 +52,7 @@ export function LLMProvider({ children }: { children: ReactNode }) {
     const [isGenerating, setIsGenerating] = useState(false);
     const isGeneratingRef = useRef(false);
     const [tps, setTps] = useState(0);
+    const [indexedChunks, setIndexedChunks] = useState(0);
 
     messagesRef.current = messages;
     isGeneratingRef.current = isGenerating;
@@ -212,7 +213,18 @@ export function LLMProvider({ children }: { children: ReactNode }) {
 
     return (
         <LLMContext.Provider
-            value={{ status, messages, isGenerating, tps, loadModel, send, stop, clearChat }}
+            value={{
+                status,
+                messages,
+                isGenerating,
+                tps,
+                loadModel,
+                send,
+                stop,
+                clearChat,
+                indexedChunks,
+                setIndexedChunks,
+            }}
         >
             {children}
         </LLMContext.Provider>

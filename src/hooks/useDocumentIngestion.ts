@@ -2,10 +2,11 @@
  * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-vweb store.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useContext, useEffect } from 'react';
 import { parseFile } from '../lib/documentParser';
 import { chunkText } from '../lib/chunker';
 import { initDb, insertChunksParallel, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
+import { LLMContext } from './LLMContext';
 
 export type IngestionStatus =
     | { state: 'idle' }
@@ -29,6 +30,13 @@ export function useDocumentIngestion() {
     const [chunkCount, setChunkCount] = useState(0);
     const [backendInfo, setBackendInfo] = useState('');
     const [dbReady, setDbReady] = useState(false);
+
+    const ctx = useContext(LLMContext);
+
+    // Sync local count to global context so Chat can detect RAG documents
+    useEffect(() => {
+        if (ctx) ctx.setIndexedChunks(chunkCount);
+    }, [chunkCount, ctx]);
 
     const ensureDb = useCallback(async () => {
         if (dbReady) return;
