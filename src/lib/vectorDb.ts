@@ -1,12 +1,11 @@
 /**
- * vectorDb.ts - Native AiMesh RAG with parallel ingestion and hybrid search.
+ * vectorDb.ts — Native AiMesh RAG with parallel ingestion and hybrid search.
  *
- * This uses barq-mesh-web directly for both indexing and retrieval so the
- * browser runs a single native mesh stack instead of a separate embedding
- * pipeline plus vector store.
+ * Keep the retrieval path inside barq-mesh-web so indexing and search stay on
+ * the same store and the browser does not depend on a separate embedder file.
  */
 
-import { embedText, EMBED_DIM } from './embedder';
+const EMBED_DIM = 384;
 
 export interface SearchResult {
     id: number;
@@ -136,15 +135,13 @@ export async function insertChunks(
 }
 
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    if (!meshStore) return [];
+    if (!meshStore || metadataStore.size === 0) return [];
 
     console.log(`[vectorDb] AiMesh retrieval: "${query}"`);
 
-    const denseResults = await searchDense(query, topK);
-    if (denseResults.length > 0) return denseResults;
-
-    const hybridResults = normalizeSearchResults(await meshStore.retrieve_hybrid(query, topK));
-    return mapResults(hybridResults, true);
+    const raw = await meshStore.retrieve_hybrid(query, topK);
+    const results = normalizeSearchResults(raw);
+    return mapResults(results, true);
 }
 
 export async function clearDb(): Promise<void> {
@@ -171,18 +168,6 @@ function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
         }
     }
     return [];
-}
-
-async function searchDense(query: string, topK: number): Promise<SearchResult[]> {
-    try {
-        const queryVec = await embedText(query);
-        const raw = await meshStore.retrieve(JSON.stringify(Array.from(queryVec)), topK);
-        const results = normalizeSearchResults(raw);
-        return mapResults(results, false);
-    } catch (err) {
-        console.warn('[vectorDb] Dense retrieval failed, falling back to hybrid search:', err);
-        return [];
-    }
 }
 
 function mapResults(results: NativeSearchResult[], hybrid: boolean): SearchResult[] {
