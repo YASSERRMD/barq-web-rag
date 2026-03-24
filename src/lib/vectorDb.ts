@@ -1,10 +1,10 @@
 /**
- * vectorDb.ts — High-speed Parallel RAG powered by barq-mesh-browser (AiMesh).
+ * vectorDb.ts — Fully Parallel RAG Pipeline using barq-mesh-browser (AiMesh).
  * 
- * This version leverages Rust-native parallel ingestion and retrieval for maximum speed.
+ * This version uses the native Rust thread pool for both ingestion and hybrid retrieval.
  */
 
-import { initEmbedder, embedText, EMBED_DIM } from './embedder';
+import { initEmbedder, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -23,44 +23,41 @@ let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
 
-// Local JS store for metadata (filenames, original text)
-// We sync this with the native IDs assigned by the engine.
+// Local mapping for metadata (filenames, etc)
 const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise the WASM compute mesh.
+ * Initialise the Parallel AiMesh engine.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising Parallel AiMesh Engine...');
+        console.log('[vectorDb] Initialising Native Parallel Mesh...');
         
         try {
-            // CRITICAL: Initialize base WASM modules FIRST
+            // WASM Initialisation Order
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
-            
             const wasmMod = await import('barq-wasm');
             await (wasmMod as any).default();
-
             // @ts-ignore
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
-            // Spawn the NATIVE worker pool (Rust threads) for parallel processing
+            // Spawn the NATIVE worker pool for parallel processing
             const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
             // @ts-ignore
             meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
             
-            console.log('[vectorDb] AiMesh Ready. Backend:', meshStore.backend(), '| Workers:', numWorkers);
+            console.log('[vectorDb] Mesh Ready. Backend:', meshStore.backend());
             
-            // Warm up primary embedder (for queries)
+            // Minimal warm-up for secondary tasks
             initEmbedder().catch(() => {});
             isInitialised = true;
         } catch (e) {
-            console.error('[vectorDb] Engine initialisation failed:', e);
+            console.error('[vectorDb] Mesh initialisation failed:', e);
             throw e;
         }
     })();
@@ -74,7 +71,7 @@ function ensureInit() {
 
 /**
  * Native Parallel Ingestion:
- * Dispatches chunks to the Rust WorkerPool for SIMD-accelerated embedding.
+ * Utilises the barq-mesh-browser WorkerPool for multi-threaded document indexing.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -84,34 +81,32 @@ export async function insertChunks(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => {
-        // Sanitise for Rust JSON parser
         const t = m.text as any;
         return typeof t.toWellFormed === 'function' ? t.toWellFormed() : t;
     });
 
-    console.log(`[vectorDb] Native Parallel Ingest: ${texts.length} chunks...`);
+    console.log(`[vectorDb] Parallel Indexing: ${texts.length} chunks via Rust WorkerPool...`);
 
     try {
         onProgress(0.1);
-
-        // Sequence Alignment: Capture starting ID from the engine
+        
+        // Sequence Alignment: Synchronise local meta with native sequential IDs
         const startIdx = meshStore.vector_count();
         
-        // Native High-Speed Ingestion (Parallel Rust Workers)
+        // Parallel Rust Ingestion (High Speed)
         await meshStore.ingest_texts(JSON.stringify(texts));
         
         onProgress(0.9);
 
-        // Sync local metadata store with the sequential IDs assigned by the engine
         for (let i = 0; i < metas.length; i++) {
             const id = startIdx + i;
             metadataStore.set(id, metas[i]);
         }
         
         onProgress(1.0);
-        console.log(`[vectorDb] Parallel Indexing Complete. Store total: ${meshStore.vector_count()}`);
+        console.log(`[vectorDb] Parallel indexing complete. Store total: ${meshStore.vector_count()}`);
     } catch (err) {
-        console.error('[vectorDb] Native ingestion failed:', err);
+        console.error('[vectorDb] Parallel ingestion failed:', err);
         throw err;
     }
 
@@ -119,34 +114,32 @@ export async function insertChunks(
 }
 
 /**
- * Parallel Retrieval using AiMesh:
- * Uses pure vector search for high precision (cosine similarity).
+ * Parallel Hybrid Retrieval:
+ * Combines BM25 and Vector search in parallel within the WASM engine.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     ensureInit();
     if (metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] Parallel Search: "${query}"`);
+    console.log(`[vectorDb] Parallel Hybrid Retrieval: "${query}"`);
     
-    // Step 1: Embed query in JS (proven reliable model)
-    const queryVec = await embedText(query);
-    const queryJson = JSON.stringify(Array.from(queryVec));
-
-    // Step 2: Native Parallel Search (Vector Only for High Precision scores)
-    // retrieve() returns JSON string of [{ id, score }]
-    const resultsJson = await meshStore.retrieve(queryJson, topK);
+    // Native Parallel Search (Keywords + MiniLM Vectors + RRF Reranking)
+    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
     
     let topResults: Array<{ id: number; score: number }> = [];
     try { topResults = JSON.parse(resultsJson); } catch { topResults = []; }
 
-    // Step 3: Map results to stable metadata
     return topResults.map((r: any) => {
         const id = r.id;
         const meta = metadataStore.get(id);
         
+        // Normalise RRF score for UI presentation (max possible RRF score is approx 0.033 with 2 rankers)
+        // We scale it so 0.016 (Rank 1 in one list) looks like a strong match (~70-80%).
+        const displayScore = Math.min((r.score * 50), 0.99);
+
         return {
             id,
-            score: r.score,
+            score: displayScore, // Return the display-friendly score
             text: meta?.text || `[Chunk ${id}]`,
             metadata: meta
         };
@@ -164,5 +157,5 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return meshStore?.backend() ?? 'Inactive';
+    return `${meshStore?.backend() ?? 'Inactive'} | Parallel Mesh`;
 }
