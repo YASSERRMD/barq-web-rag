@@ -1,11 +1,13 @@
 /**
- * vectorDb.ts — Definitive High-Speed Parallel RAG with worker lifecycle management.
+ * vectorDb.ts - High-speed RAG backed directly by barq-vweb.
  *
- * Keeps the stable AiMesh contract used by the bundled WASM wrapper so
- * ingestion and retrieval stay aligned with the IDs stored in metadata.
+ * Hot path:
+ * - embed once in JS
+ * - insert vectors into barq-vweb with explicit IDs
+ * - search vectors natively in barq-vweb
  */
 
-import { initBarqWasm, cosineSimilarity } from './barqWasm';
+import { initBarqWasm } from './barqWasm';
 import { initEmbedder, embedBatch, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
@@ -21,43 +23,40 @@ export interface ChunkMeta {
     text: string;
 }
 
-interface StoredChunk extends ChunkMeta {
-    vector: Float32Array;
-}
+type NativeSearchResult = {
+    id: number;
+    score: number;
+    text?: string;
+    metadata?: ChunkMeta;
+};
 
-let meshStore: any = null;
+let dbStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
 
-// Local mapping for metadata synchronization
-const metadataStore = new Map<number, StoredChunk>();
+// Local mapping for metadata synchronization.
+const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise the stable AiMesh engine on demand.
+ * Initialise the barq-vweb database on demand.
  */
 export async function initDb(): Promise<void> {
-    if (isInitialised && meshStore) return;
+    if (isInitialised && dbStore) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising high-speed parallel mesh...');
+        console.log('[vectorDb] Initialising barq-vweb database...');
         try {
             await initBarqWasm();
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
-            // @ts-ignore
-            const mod = await import('barq-mesh-web');
-            await (mod as any).default();
-            
-            // Keep the worker pool bounded so the browser stays responsive.
-            const numWorkers = 4;
-            // @ts-ignore
-            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
-            await meshStore.clear();
+
+            dbStore = new vwebMod.BarqVWeb('rag-session');
+            await dbStore.clear();
             metadataStore.clear();
-            
+
             isInitialised = true;
-            console.log('[vectorDb] Mesh ready with', numWorkers, 'workers.');
+            console.log('[vectorDb] barq-vweb ready.');
             initEmbedder().catch(() => {});
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
@@ -66,15 +65,16 @@ export async function initDb(): Promise<void> {
             initPromise = null;
         }
     })();
+
     return initPromise;
 }
 
 function ensureInit() {
-    if (!meshStore) throw new Error('vectorDb: call initDb() first');
+    if (!dbStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * High-Speed Native Parallel Ingestion.
+ * Fast ingestion using precomputed JS embeddings and native barq-vweb indexing.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -84,73 +84,76 @@ export async function insertChunks(
     ensureInit();
     if (metas.length === 0) return getCount();
 
-    const texts = metas.map(m => (m.text as any).toWellFormed?.() ?? m.text);
-    console.log(`[vectorDb] Parallel indexing ${texts.length} chunks via Rust Pool...`);
+    const texts = metas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
+    console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-vweb...`);
 
     try {
         onProgress(0.1);
-        // Captured count for ID sequence alignment
-        const startIdx = meshStore.vector_count();
         const vectors = await embedBatch(texts);
-        onProgress(0.4);
-        
-        // Native High-Speed Ingestion
-        await meshStore.ingest_texts(JSON.stringify(texts));
-        
+        onProgress(0.35);
+
+        const startIdx = dbStore.count();
+        const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
+        const ids = new Uint32Array(vectors.length);
+
+        for (let i = 0; i < vectors.length; i++) {
+            flatVectors.set(vectors[i], i * EMBED_DIM);
+            ids[i] = startIdx + i;
+        }
+
+        await dbStore.insert_vectors(flatVectors, ids, EMBED_DIM);
         onProgress(0.9);
 
-        // SYNC: Strictly align metadata with the incrementing Rust IDs
         for (let i = 0; i < metas.length; i++) {
-            const id = startIdx + i;
-            metadataStore.set(id, { ...metas[i], vector: vectors[i] });
+            metadataStore.set(ids[i], metas[i]);
         }
-        
+
         onProgress(1.0);
-        console.log(`[vectorDb] Done. Store total: ${meshStore.vector_count()}`);
+        console.log(`[vectorDb] barq-vweb indexing complete. Total: ${dbStore.count()}`);
     } catch (err) {
         console.error('[vectorDb] Ingestion failed:', err);
         throw err;
     }
+
     return getCount();
 }
 
 /**
- * Neural Search using the native engine's high-precision retrieval.
- * Hybrid search produces candidates; SIMD cosine reranking picks the final chunks.
+ * Fast native vector search using barq-vweb's HNSW index.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    if (!meshStore || metadataStore.size === 0) return [];
+    if (!dbStore || metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] Parallel retrieval: "${query}"`);
-    const queryVec = await embedText(query);
+    console.log(`[vectorDb] barq-vweb retrieval: "${query}"`);
+    let raw: unknown;
 
-    const best: SearchResult[] = [];
-
-    for (const [id, meta] of metadataStore.entries()) {
-        const score = cosineSimilarity(queryVec, meta.vector);
-        const candidate: SearchResult = {
-            id,
-            score,
-            text: meta.text,
-            metadata: meta,
-        };
-
-        if (best.length < topK) {
-            insertSorted(best, candidate);
-            continue;
-        }
-
-        if (score > best[best.length - 1].score) {
-            best.pop();
-            insertSorted(best, candidate);
-        }
+    try {
+        raw = await dbStore.search(query, topK, false);
+    } catch (err) {
+        console.warn('[vectorDb] Native text search failed, falling back to vector search:', err);
+        const queryVec = await embedText(query);
+        raw = await dbStore.search_vector(queryVec, topK);
     }
 
-    return best;
+    const results = normalizeSearchResults(raw);
+
+    return results
+        .map((r) => {
+            const meta = r.metadata ?? metadataStore.get(r.id);
+            if (!meta) return null;
+
+            return {
+                id: r.id,
+                score: r.score,
+                text: r.text ?? meta.text,
+                metadata: meta,
+            };
+        })
+        .filter(Boolean) as SearchResult[];
 }
 
 export async function clearDb(): Promise<void> {
-    if (meshStore) await meshStore.clear();
+    if (dbStore) await dbStore.clear();
     metadataStore.clear();
 }
 
@@ -159,11 +162,18 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${meshStore?.backend() ?? 'Inactive'} | SIMD Dense Retrieval`;
+    return `${dbStore?.backend_info?.() ?? 'Inactive'} | barq-vweb native search`;
 }
 
-function insertSorted(target: SearchResult[], item: SearchResult): void {
-    let index = 0;
-    while (index < target.length && target[index].score >= item.score) index++;
-    target.splice(index, 0, item);
+function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
+    if (Array.isArray(raw)) return raw as NativeSearchResult[];
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed as NativeSearchResult[];
+        } catch {
+            return [];
+        }
+    }
+    return [];
 }
