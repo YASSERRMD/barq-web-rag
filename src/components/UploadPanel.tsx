@@ -35,12 +35,18 @@ function FileRow({ file }: { file: IngestionFile }) {
                     {formatBytes(file.size)}
                     {file.chunks > 0 && ` · ${file.chunks} chunks`}
                 </div>
+                {file.status === 'error' && file.error && (
+                    <div style={{ color: 'var(--red)', fontSize: '0.7rem', marginTop: '0.2rem' }}>
+                        Error: {file.error}
+                    </div>
+                )}
             </div>
             <div style={{ flexShrink: 0 }}>
                 {file.status === 'processing' && <Loader2 size={14} className="animate-spin" style={{ color: 'var(--amber)' }} />}
                 {file.status === 'done' && <CheckCircle size={14} style={{ color: 'var(--green)' }} />}
-                {file.status === 'error' && <span title={file.error}><XCircle size={14} style={{ color: 'var(--red)' }} /></span>}
+                {file.status === 'error' && <XCircle size={14} style={{ color: 'var(--red)' }} />}
             </div>
+
         </div>
     );
 }
@@ -129,6 +135,7 @@ export function UploadPanel({ ingestion, onClearAll }: UploadPanelProps) {
                     style={{ display: 'none' }}
                     onChange={(e) => e.target.files && handleFiles(e.target.files)}
                 />
+                
                 {isProcessing ? (
                     <div className="flex flex-col items-center gap-2">
                         <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent-light)' }} />
@@ -138,10 +145,20 @@ export function UploadPanel({ ingestion, onClearAll }: UploadPanelProps) {
                             {status.state === 'embedding' && `Embedding ${(status as any).progress ?? 0}%…`}
                         </p>
                         {status.state === 'embedding' && (
-                            <div className="progress-track w-full" style={{ maxWidth: '160px' }}>
+                            <div className="progress-track w-full" style={{ maxWidth: '160px', marginTop: '0.5rem' }}>
                                 <div className="progress-fill" style={{ width: `${(status as any).progress ?? 0}%` }} />
                             </div>
                         )}
+                    </div>
+                ) : status.state === 'done' ? (
+                    <div className="flex flex-col items-center gap-2 animate-bounce-in">
+                        <CheckCircle size={28} style={{ color: 'var(--green)' }} />
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600 }}>
+                            Ingestion Complete!
+                        </p>
+                        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {chunkCount} chunks ready for RAG
+                        </p>
                     </div>
                 ) : (
                     <div className="flex flex-col items-center gap-2">

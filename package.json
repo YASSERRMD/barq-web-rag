@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.5.0",
+    "barq-mesh-web": "file:public/barq-mesh-web-pkg",
     "barq-vweb": "file:public/barq-vweb-pkg",
     "barq-wasm": "file:public/barq-wasm-pkg",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.8.0",
+    "path-browserify": "^1.0.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

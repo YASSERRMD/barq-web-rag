@@ -38,11 +38,10 @@ function readAsText(file: File): Promise<string> {
 async function parsePdf(file: File): Promise<string> {
     // Dynamic import to keep initial bundle small
     const pdfjsLib = await import('pdfjs-dist');
-    // Point to the PDF.js worker bundled with pdfjs-dist
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-        'pdfjs-dist/build/pdf.worker.mjs',
-        import.meta.url
-    ).toString();
+    // Use Vite's ?url suffix to correctly resolve and serve the worker file
+    // @ts-ignore
+    const pdfWorkerUrl = (await import('pdfjs-dist/build/pdf.worker.mjs?url')).default;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
     const arrayBuf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise;

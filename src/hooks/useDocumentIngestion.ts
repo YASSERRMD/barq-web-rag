@@ -2,10 +2,11 @@
  * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-vweb store.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useContext, useEffect } from 'react';
 import { parseFile } from '../lib/documentParser';
 import { chunkText } from '../lib/chunker';
-import { initDb, insertChunks, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
+import { initDb, insertChunksParallel, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
+import { LLMContext } from './LLMContext';
 
 export type IngestionStatus =
     | { state: 'idle' }
@@ -30,6 +31,15 @@ export function useDocumentIngestion() {
     const [backendInfo, setBackendInfo] = useState('');
     const [dbReady, setDbReady] = useState(false);
 
+    const ctx = useContext(LLMContext);
+
+    // Sync local count to global context so Chat can detect RAG documents
+    useEffect(() => {
+        if (ctx && ctx.indexedChunks !== chunkCount) {
+            ctx.setIndexedChunks(chunkCount);
+        }
+    }, [chunkCount, ctx]);
+
     const ensureDb = useCallback(async () => {
         if (dbReady) return;
         setStatus({ state: 'initialising' });
@@ -43,14 +53,7 @@ export function useDocumentIngestion() {
         const fileArray = Array.from(newFiles);
         if (fileArray.length === 0) return;
 
-        try {
-            await ensureDb();
-        } catch (e: any) {
-            setStatus({ state: 'error', error: `DB init failed: ${e?.message ?? e}` });
-            return;
-        }
-
-        // Add files to the list with "pending" status
+        // Add files to the list with "pending" status IMMEDIATELY for feedback
         setFiles((prev) => [
             ...prev,
             ...fileArray.map((f) => ({
@@ -60,6 +63,18 @@ export function useDocumentIngestion() {
                 status: 'pending' as const,
             })),
         ]);
+
+        try {
+            await ensureDb();
+        } catch (e: any) {
+            const errorMsg = `DB init failed: ${e?.message ?? e}`;
+            setStatus({ state: 'error', error: errorMsg });
+            // Mark all pending files as error
+            setFiles((prev) => 
+                prev.map(f => f.status === 'pending' ? { ...f, status: 'error', error: errorMsg } : f)
+            );
+            return;
+        }
 
         for (const file of fileArray) {
             // Mark as processing
@@ -77,21 +92,16 @@ export function useDocumentIngestion() {
                 const chunks = chunkText(text, file.name);
                 console.log(`[Ingestion] Chunked into ${chunks.length} chunks.`);
 
-                // Step 3: Embed & insert in batches of 50
-                const BATCH = 50;
-                let inserted = 0;
-                for (let i = 0; i < chunks.length; i += BATCH) {
-                    const batch = chunks.slice(i, i + BATCH);
-                    console.log(`[Ingestion] Inserting batch ${i} to ${i + batch.length}...`);
-                    await insertChunks(batch);
-                    console.log(`[Ingestion] Batch inserted.`);
-                    inserted += batch.length;
+                // Step 3: Embed & insert in parallel across pool of Web Workers
+                setStatus({ state: 'embedding', fileName: file.name, progress: 0 });
+                
+                await insertChunksParallel(chunks, (progress) => {
                     setStatus({
                         state: 'embedding',
                         fileName: file.name,
-                        progress: Math.round((inserted / chunks.length) * 100),
+                        progress: Math.round(progress * 100),
                     });
-                }
+                });
 
                 const newCount = getCount();
                 setChunkCount(newCount);

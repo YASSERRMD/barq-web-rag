@@ -33,6 +33,8 @@ export interface LLMContextValue {
     send: (text: string, augmentedHistory?: ChatMessage[], sources?: SourceChunk[]) => void;
     stop: () => void;
     clearChat: () => void;
+    indexedChunks: number;
+    setIndexedChunks: (count: number) => void;
 }
 
 export const LLMContext = createContext<LLMContextValue | null>(null);

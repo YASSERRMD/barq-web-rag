@@ -4,7 +4,7 @@
  * Modified to support RAG: `send()` accepts a pre-built messages array.
  */
 
-import { useRef, useState, useCallback, type ReactNode } from 'react';
+import { useRef, useState, useCallback, useMemo, type ReactNode } from 'react';
 import {
     pipeline,
     TextStreamer,
@@ -52,6 +52,7 @@ export function LLMProvider({ children }: { children: ReactNode }) {
     const [isGenerating, setIsGenerating] = useState(false);
     const isGeneratingRef = useRef(false);
     const [tps, setTps] = useState(0);
+    const [indexedChunks, setIndexedChunks] = useState(0);
 
     messagesRef.current = messages;
     isGeneratingRef.current = isGenerating;
@@ -65,11 +66,12 @@ export function LLMProvider({ children }: { children: ReactNode }) {
                     dtype: DTYPE,
                     device: 'webgpu',
                     progress_callback: (p: any) => {
-                        if (p.status !== 'progress' || !p.file?.endsWith('.onnx_data')) return;
+                        if (p.status !== 'progress') return;
+                        // Use actual progress even if not the largest file, to show UI is alive
                         setStatus({
                             state: 'loading',
                             progress: p.progress,
-                            message: `Downloading model… ${Math.round(p.progress)}%`,
+                            message: `Downloading model: ${p.file ?? ''}… ${Math.round(p.progress)}%`,
                         });
                     },
                 });
@@ -209,10 +211,21 @@ export function LLMProvider({ children }: { children: ReactNode }) {
         setMessages([]);
     }, []);
 
+    const ctxValue = useMemo(() => ({
+        status,
+        messages,
+        isGenerating,
+        tps,
+        loadModel,
+        send,
+        stop,
+        clearChat,
+        indexedChunks,
+        setIndexedChunks,
+    }), [status, messages, isGenerating, tps, loadModel, send, stop, clearChat, indexedChunks]);
+
     return (
-        <LLMContext.Provider
-            value={{ status, messages, isGenerating, tps, loadModel, send, stop, clearChat }}
-        >
+        <LLMContext.Provider value={ctxValue}>
             {children}
         </LLMContext.Provider>
     );
