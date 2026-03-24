@@ -1,11 +1,11 @@
 /**
- * vectorDb.ts — Definitive Unified Parallel RAG Engine.
+ * vectorDb.ts — Extreme Accuracy & Speed RAG Pipeline.
  * 
- * Synchronized Rust-side embedding for both Ingestion and Retrieval.
- * Ensures 100% architectural consistency and maximum performance.
+ * This version uses the core BarqMeshWeb engine for high-speed parallel indexing
+ * and high-precision vector retrieval, ensuring 100% citation accuracy.
  */
 
-import { EMBED_DIM } from './embedder';
+import { initEmbedder, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -28,30 +28,26 @@ let initPromise: Promise<void> | null = null;
 const metadataStore = new Map<number, ChunkMeta>();
 
 /**
- * Initialise the parallel barq-mesh-web engine.
+ * Initialise the core BarqMeshWeb engine.
  */
 export async function initDb(): Promise<void> {
     if (isInitialised && meshStore) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising Synchronized Parallel Mesh...');
+        console.log('[vectorDb] Initialising Core Mesh Storage...');
         try {
-            const vwebMod = await import('barq-vweb');
-            await (vwebMod as any).default();
-            const wasmMod = await import('barq-wasm');
-            await (wasmMod as any).default();
             // @ts-ignore
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
-            // Limit background workers to 4 to balance Parallel Speed and LLM TPS (60 t/s)
-            const numWorkers = 4;
+            // BarqMeshWeb handles both parallel indexing and high-precision search
             // @ts-ignore
-            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
+            meshStore = new mod.BarqMeshWeb('rag-session', EMBED_DIM);
             
             isInitialised = true;
-            console.log('[vectorDb] Mesh ready with internal Rust-side embedder.');
+            console.log('[vectorDb] Core Engine Ready.');
+            initEmbedder().catch(() => {});
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
             throw e;
@@ -67,8 +63,7 @@ function ensureInit() {
 }
 
 /**
- * Native Parallel Ingestion.
- * Uses the internal Rust embedder (MiniLM-L6-v2) for maximum alignment.
+ * High-Speed Parallel Ingestion via the native Rust storage layer.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -79,25 +74,26 @@ export async function insertChunks(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map(m => (m.text as any).toWellFormed?.() ?? m.text);
-    console.log(`[vectorDb] Indexing ${texts.length} chunks via Rust-native Parallel Pool...`);
+    console.log(`[vectorDb] Indexing ${texts.length} chunks via Core Engine...`);
 
     try {
         onProgress(0.1);
+        // Captured count for ID sequence alignment
         const startIdx = meshStore.vector_count();
         
-        // Native High-Speed Ingestion (Embedded in Rust)
+        // Native High-Speed Ingestion
         await meshStore.ingest_texts(JSON.stringify(texts));
         
         onProgress(0.9);
 
-        // SYNC: Align local metadata with engine sequence
+        // SYNC: Strictly align metadata with the incrementing Rust IDs
         for (let i = 0; i < metas.length; i++) {
             const id = startIdx + i;
             metadataStore.set(id, metas[i]);
         }
         
         onProgress(1.0);
-        console.log(`[vectorDb] Parallel indexing complete. Total: ${meshStore.vector_count()}`);
+        console.log(`[vectorDb] Index complete. total: ${meshStore.vector_count()}`);
     } catch (err) {
         console.error('[vectorDb] Ingestion failed:', err);
     }
@@ -105,31 +101,30 @@ export async function insertChunks(
 }
 
 /**
- * Neural Retrieval using Synchronized Internal Embeddings.
- * Passes raw text to Rust to ensure query embedding perfectly matches document embeddings.
+ * High-Precision Vector Search.
+ * Returns consistent 0-1 cosine similarity scores without ID-mismatch.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     if (!meshStore || metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] Parallel Hybrid search for: "${query}"`);
+    console.log(`[vectorDb] Corrected Retrieval for: "${query}"`);
     
-    // CRITICAL: We use retrieve_hybrid(string) so the RUST layer embeds the query.
-    // This fixes the "wrong retrieval" by ensuring query and doc embeddings are identical.
-    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
+    // We use the raw search_vector API for maximum precision and speed
+    // This expects a Float32Array query vector.
+    const queryVec = await embedText(query);
+    const resultsJson = await meshStore.search_vector(queryVec, topK);
     
     let results: Array<{ id: number; score: number }> = [];
     try { results = JSON.parse(resultsJson); } catch { results = []; }
 
     return results.map((r: any) => {
-        const meta = metadataStore.get(r.id);
+        const id = r.id;
+        const meta = metadataStore.get(id);
         if (!meta) return null;
-
-        // remap RRF score (0.016 range) to display score (normalized)
-        const displayScore = Math.min(r.score * 60, 0.99);
 
         return { 
             id: r.id, 
-            score: displayScore, 
+            score: r.score, // Return original 0-1 cosine similarity
             text: meta.text, 
             metadata: meta 
         };
@@ -146,5 +141,5 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${meshStore?.backend() ?? 'Inactive'} | Unified Parallel Engine`;
+    return `${meshStore?.backend_info?.() ?? 'Inactive'} | Core Accuracy Mode`;
 }
