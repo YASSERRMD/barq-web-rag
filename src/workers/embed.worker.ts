@@ -4,6 +4,10 @@ import { pipeline, env } from '@huggingface/transformers';
 
 // Disable local checks since we run in browser
 env.allowLocalModels = false;
+if (env.backends.onnx.wasm) {
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+}
 
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 const WORKER_BATCH_SIZE = 16;

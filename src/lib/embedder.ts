@@ -73,6 +73,16 @@ class EmbedWorkerClient {
                 return;
             }
 
+            if (msg.type === 'error') {
+                const error = new Error(msg.error);
+                if (msg.id === 0) {
+                    this.readyReject?.(error);
+                    this.readyResolve = null;
+                    this.readyReject = null;
+                    return;
+                }
+            }
+
             if (msg.type === 'ready') {
                 this.readyResolve?.();
                 this.readyResolve = null;
@@ -141,6 +151,7 @@ let pool: EmbedWorkerClient[] | null = null;
 let initPromise: Promise<void> | null = null;
 let ready = false;
 let warmupProgressCallback: EmbedProgressHandler | null = null;
+let desiredWorkerCount = WORKER_COUNT;
 
 function getWorkerCount(): number {
     if (typeof navigator === 'undefined') return 1;
@@ -150,7 +161,7 @@ function getWorkerCount(): number {
 }
 
 function buildPool(): EmbedWorkerClient[] {
-    const count = WORKER_COUNT;
+    const count = desiredWorkerCount;
     const workers: EmbedWorkerClient[] = [];
 
     for (let i = 0; i < count; i++) {
@@ -165,20 +176,38 @@ async function ensurePool(): Promise<void> {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        pool = buildPool();
-        await Promise.all(pool.map((worker) => worker.ready()));
-        ready = true;
-        console.log(`[embedder] MiniLM worker pool ready (${pool.length} worker${pool.length === 1 ? '' : 's'})`);
+        const tryCounts = desiredWorkerCount > 1 ? [desiredWorkerCount, 1] : [1];
+
+        let lastError: unknown = null;
+
+        for (const count of tryCounts) {
+            desiredWorkerCount = count;
+            pool = buildPool();
+
+            try {
+                await Promise.all(pool.map((worker) => worker.ready()));
+                ready = true;
+                console.log(`[embedder] MiniLM worker pool ready (${pool.length} worker${pool.length === 1 ? '' : 's'})`);
+                return;
+            } catch (error) {
+                lastError = error;
+                console.warn(`[embedder] Worker pool warmup failed at size ${count}; retrying smaller pool`, error);
+                if (pool) {
+                    for (const worker of pool) {
+                        worker.dispose();
+                    }
+                }
+                pool = null;
+                ready = false;
+            }
+        }
+
+        throw lastError ?? new Error('embedder: failed to initialise worker pool');
     })();
 
     try {
         await initPromise;
     } catch (error) {
-        if (pool) {
-            for (const worker of pool) {
-                worker.dispose();
-            }
-        }
         pool = null;
         ready = false;
         throw error;
@@ -274,4 +303,5 @@ export async function disposeEmbedder(): Promise<void> {
     pool = null;
     ready = false;
     initPromise = null;
+    desiredWorkerCount = WORKER_COUNT;
 }
