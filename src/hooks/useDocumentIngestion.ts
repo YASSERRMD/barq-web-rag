@@ -1,16 +1,16 @@
 /**
- * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-vweb store.
+ * useDocumentIngestion.ts — File → parse → chunk → fast embed → barq-mesh-web store.
  */
 
 import { useState, useCallback, useContext, useEffect } from 'react';
 import { parseFile } from '../lib/documentParser';
 import { chunkText } from '../lib/chunker';
-import { initDb, insertChunksParallel, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
+import { initDb, insertChunks, clearDb, getCount, getBackendInfo } from '../lib/vectorDb';
 import { LLMContext } from './LLMContext';
 
 export type IngestionStatus =
     | { state: 'idle' }
-    | { state: 'initialising' }
+    | { state: 'initialising'; progress?: number }
     | { state: 'parsing'; fileName: string }
     | { state: 'embedding'; fileName: string; progress: number }
     | { state: 'done' }
@@ -42,10 +42,16 @@ export function useDocumentIngestion() {
 
     const ensureDb = useCallback(async () => {
         if (dbReady) return;
-        setStatus({ state: 'initialising' });
-        await initDb();
-        // backendInfo shows all three modules: barq-vweb + barq-wasm + MiniLM embedder
-        setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD | MiniLM-L6-v2`);
+        setStatus({ state: 'initialising', progress: 0 });
+        await initDb((progress) => {
+            setStatus((prev) => {
+                if (prev.state !== 'initialising') return prev;
+                const nextProgress = Math.max(prev.progress ?? 0, Math.round(progress * 100));
+                return { state: 'initialising', progress: nextProgress };
+            });
+        });
+        // backendInfo shows the mesh store and the semantic embedding worker.
+        setBackendInfo(`${getBackendInfo()} | MiniLM worker`);
         setDbReady(true);
     }, [dbReady]);
 
@@ -92,17 +98,17 @@ export function useDocumentIngestion() {
                 const chunks = chunkText(text, file.name);
                 console.log(`[Ingestion] Chunked into ${chunks.length} chunks.`);
 
-                // Step 3: Embed & insert in parallel across pool of Web Workers
+                // Step 3: Batch embed and insert through the mesh backend.
                 setStatus({ state: 'embedding', fileName: file.name, progress: 0 });
-                
-                await insertChunksParallel(chunks, (progress) => {
+                console.log(`[Ingestion] Indexing ${chunks.length} chunks via barq-mesh-web...`);
+                await insertChunks(chunks, (progress) => {
                     setStatus({
                         state: 'embedding',
                         fileName: file.name,
                         progress: Math.round(progress * 100),
                     });
                 });
-
+                
                 const newCount = getCount();
                 setChunkCount(newCount);
 

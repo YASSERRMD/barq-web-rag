@@ -1,6 +1,18 @@
 {
     "compilerOptions": {
         "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+        "baseUrl": ".",
+        "paths": {
+            "barq-mesh-web": [
+                "./public/barq-mesh-web-pkg/barq_mesh_web.d.ts"
+            ],
+            "barq-vweb": [
+                "./public/barq-vweb-pkg/barq_vweb.d.ts"
+            ],
+            "barq-wasm": [
+                "./public/barq-wasm-pkg/barq_wasm.d.ts"
+            ]
+        },
         "target": "ES2022",
         "useDefineForClassFields": true,
         "lib": [

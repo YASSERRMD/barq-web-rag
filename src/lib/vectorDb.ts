@@ -1,11 +1,14 @@
 /**
- * vectorDb.ts — High-performance RAG pipeline leveraging the barq-mesh-web AiMesh.
+ * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
  *
- * This version uses the official barq-mesh-web parallel ingestion (Rust-side SIMD + Workers)
- * rather than manual JS workers, ensuring maximum embedding speed.
+ * Hot path:
+ * - real MiniLM embeddings in a background worker
+ * - insert vectors through barq-mesh-web with explicit IDs
+ * - search natively through barq-mesh-web
  */
 
-import { initEmbedder, EMBED_DIM } from './embedder';
+import { initBarqWasm } from './barqWasm';
+import { initEmbedder, initEmbedderWithProgress, embedBatch, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -20,53 +23,68 @@ export interface ChunkMeta {
     text: string;
 }
 
-let meshStore: any = null;
+type NativeSearchResult = {
+    id: number;
+    score: number;
+    text?: string;
+    metadata?: ChunkMeta;
+};
+
+let dbStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
+const INGEST_BATCH_SIZE = 48;
 
-// While barq-vweb stores the vectors, we keep a text mapping for RAG context
-const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
-let nextId = 0;
+// Local mapping for metadata synchronization.
+const metadataStore = new Map<number, ChunkMeta>();
+
+function yieldToUi(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 /**
- * Initialise the WASM compute mesh.
+ * Initialise the barq-mesh-web database on demand.
  */
-export async function initDb(): Promise<void> {
-    if (isInitialised) return;
+export async function initDb(onProgress?: (p: number) => void): Promise<void> {
+    if (isInitialised && dbStore) {
+        onProgress?.(1);
+        return;
+    }
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising barq-mesh-web (Native Parallel Edition)...');
-        
-        const initTimeout = setTimeout(() => {
-            if (!isInitialised) console.warn('[vectorDb] Mesh initialisation taking longer than 10s...');
-        }, 10000);
-
+        console.log('[vectorDb] Initialising barq-mesh-web database...');
         try {
-            // CRITICAL: Initialize base WASM modules FIRST
+            await initBarqWasm();
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
-            
-            const wasmMod = await import('barq-wasm');
-            await (wasmMod as any).default();
 
-            const mod = await import('barq-mesh-web');
-            await (mod as any).default();
-            
-            // Use the Parallel AiMesh instead of lower-level storage
-            const numWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
-            meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
-            
-            console.log('[vectorDb] AiMesh Ready. Backend:', meshStore.backend(), '| Workers:', numWorkers);
-            
-            // Warm up primary embedder (for queries)
-            initEmbedder().catch(() => {});
+            const meshMod = await import('barq-mesh-web');
+            await (meshMod as any).default();
+
+            dbStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
+            await dbStore.clear();
+            metadataStore.clear();
+
             isInitialised = true;
+            console.log('[vectorDb] barq-mesh-web ready.');
+            if (onProgress) {
+                await initEmbedderWithProgress((progress, info) => {
+                    onProgress(Math.max(0, Math.min(progress, 1)));
+                    if (info?.file) {
+                        console.log(`[vectorDb] embedder warmup ${info.worker}: ${info.file}`);
+                    }
+                });
+            } else {
+                await initEmbedder().catch((e) => {
+                    console.warn('[vectorDb] embedder warmup failed:', e);
+                });
+            }
         } catch (e) {
-            console.error('[vectorDb] FATAL: Mesh initialisation failed:', e);
+            console.error('[vectorDb] Init failed:', e);
             throw e;
         } finally {
-            clearTimeout(initTimeout);
+            initPromise = null;
         }
     })();
 
@@ -74,107 +92,116 @@ export async function initDb(): Promise<void> {
 }
 
 function ensureInit() {
-    if (!meshStore) throw new Error('vectorDb: call initDb() first');
+    if (!dbStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * Unified ingestion using barq-mesh-web's native parallel worker pool.
+ * Fast ingestion using worker-backed semantic embeddings and native barq-mesh-web indexing.
  */
-export async function insertChunksParallel(
+export async function insertChunks(
     metas: ChunkMeta[],
-    onProgress: (p: number) => void
+    onProgress: (p: number) => void = () => {}
 ): Promise<number> {
+    await initDb();
     ensureInit();
     if (metas.length === 0) return getCount();
 
-    const texts = metas.map((m) => {
-        // Ensure string is well-formed to prevent Rust JSON parse errors (lone surrogates)
-        // especially common when parsing raw PDF segments.
-        if (typeof (m.text as any).toWellFormed === 'function') {
-            return m.text.toWellFormed();
-        }
-        // Fallback for older environments: strip unpaired surrogates
-        return m.text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
-    });
-    console.log(`[vectorDb] Starting NATIVE parallel ingestion for ${texts.length} chunks.`);
+    const texts = metas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
+    console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
 
     try {
-        // Step 1: Use the mesh's built-in parallel ingestion
-        onProgress(0.1); 
-        
-        const textsJson = JSON.stringify(texts);
-        await meshStore.ingest_texts(textsJson);
-        
-        onProgress(0.9); // Nearly done
+        onProgress(0.05);
 
-        // Step 2: Sync metadata store for retrieval (we need text lookup)
-        // Since ingest_texts inserts into the DB, we need to manually track IDs if we want local metadataStore sync
-        // However, for pure RAG we just need to know how many vectors we have.
-        // We simulate the ID sync here for our Local Map.
-        const currentCount = meshStore.vector_count();
-        const added = texts.length;
-        
-        // Note: ingest_texts usually assigns serial IDs 0, 1, 2...
-        // We keep our metadataStore in sync
-        for (let i = 0; i < metas.length; i++) {
-            const id = nextId + i;
-            // We store the text. Vector retrieval from WASM is expensive, so we'll 
-            // rely on the DB for search and the metadataStore for content display.
-            metadataStore.set(id, { ...metas[i], vector: new Float32Array(EMBED_DIM) });
+        const total = metas.length;
+        let processed = 0;
+
+        for (let offset = 0; offset < metas.length; offset += INGEST_BATCH_SIZE) {
+            const batchMetas = metas.slice(offset, offset + INGEST_BATCH_SIZE);
+            const batchTexts = batchMetas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
+            const vectors = await embedBatch(batchTexts);
+
+            const startIdx = dbStore.count();
+            const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
+            const ids = new Uint32Array(vectors.length);
+
+            for (let i = 0; i < vectors.length; i++) {
+                flatVectors.set(vectors[i], i * EMBED_DIM);
+                ids[i] = startIdx + i;
+            }
+
+            await dbStore.upsert_vectors(flatVectors, ids);
+
+            for (let i = 0; i < batchMetas.length; i++) {
+                metadataStore.set(ids[i], batchMetas[i]);
+            }
+
+            processed += batchMetas.length;
+            onProgress(Math.min(0.1 + (processed / total) * 0.85, 0.99));
+
+            if (processed < total) {
+                await yieldToUi();
+            }
         }
-        
-        nextId += added;
+
         onProgress(1.0);
-        console.log(`[vectorDb] Ingestion complete. Store total: ${currentCount}`);
+        console.log(`[vectorDb] barq-mesh-web indexing complete. Total: ${dbStore.count()}`);
     } catch (err) {
-        console.error('[vectorDb] Native ingestion failed:', err);
+        console.error('[vectorDb] Ingestion failed:', err);
         throw err;
     }
 
     return getCount();
 }
 
-/** Legacy/Serial fallback */
-export async function insertChunks(metas: ChunkMeta[]): Promise<number> {
-    return insertChunksParallel(metas, () => {});
-}
-
-/** Semantic Search using AiMesh's hybrid retrieval */
+/**
+ * Semantic retrieval using barq-mesh-web's native vector search.
+ */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    ensureInit();
-    if (metadataStore.size === 0) return [];
+    if (!dbStore || metadataStore.size === 0) return [];
 
-    console.log(`[vectorDb] RAG Search: "${query}" (topK=${topK})`);
-    
-    // Use retrieve_hybrid for best keywords + semantic balance
-    // returns JSON string of [{id, score}]
-    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
-    let topResults: Array<{ id: number; score: number }> = [];
-    try { topResults = JSON.parse(resultsJson); } catch { topResults = []; }
+    console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
+    const queryVec = await embedText(query);
+    const raw = await dbStore.search_vector(queryVec, topK);
 
-    return topResults.map((r: any) => {
-        const id = r.id;
-        const meta = metadataStore.get(id);
-        return {
-            id,
-            score: r.score,
-            text: meta?.text || `[Chunk ${id}]`,
-            metadata: meta
-        };
-    });
+    const results = normalizeSearchResults(raw);
+
+    return results
+        .map((r) => {
+            const meta = r.metadata ?? metadataStore.get(r.id);
+            if (!meta) return null;
+
+            return {
+                id: r.id,
+                score: r.score,
+                text: r.text ?? meta.text,
+                metadata: meta,
+            };
+        })
+        .filter(Boolean) as SearchResult[];
 }
 
 export async function clearDb(): Promise<void> {
-    ensureInit();
-    await meshStore.clear();
+    if (dbStore) await dbStore.clear();
     metadataStore.clear();
-    nextId = 0;
 }
 
 export function getCount(): number {
-    return meshStore?.vector_count() ?? 0;
+    return metadataStore.size;
 }
 
 export function getBackendInfo(): string {
-    return meshStore?.backend() ?? 'Inactive';
+    return `${dbStore?.backend_info?.() ?? 'Inactive'} | worker embeddings`;
+}
+
+function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
+    if (Array.isArray(raw)) return raw as NativeSearchResult[];
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed as NativeSearchResult[];
+        } catch {
+            return [];
+        }
+    }
+    return [];
 }

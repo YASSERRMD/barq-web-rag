@@ -6,38 +6,73 @@ import { pipeline, env } from '@huggingface/transformers';
 env.allowLocalModels = false;
 
 const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
+const WORKER_BATCH_SIZE = 16;
 
 let embedPipeline: any = null;
+let activeInitId = 0;
 
 async function getEmbedder() {
     if (!embedPipeline) {
         embedPipeline = await pipeline('feature-extraction', MODEL_ID, {
             dtype: 'q8',
             device: 'wasm',
+            progress_callback: (p: any) => {
+                if (p?.status !== 'progress') return;
+                self.postMessage({
+                    id: activeInitId,
+                    type: 'progress',
+                    progress: p.progress ?? 0,
+                    file: p.file ?? MODEL_ID,
+                });
+            },
         });
     }
     return embedPipeline;
 }
 
 self.onmessage = async (e: MessageEvent) => {
-    const { id, texts } = e.data as { id: string; texts: string[] };
+    const { id, type, texts } = e.data as { id: number; type?: string; texts?: string[] };
+
+    if (type === 'init') {
+        try {
+            activeInitId = id;
+            await getEmbedder();
+            self.postMessage({ id, type: 'ready' });
+        } catch (err: any) {
+            self.postMessage({ id, type: 'error', error: err?.message ?? String(err) });
+        }
+        return;
+    }
+
+    if (!texts) return;
 
     try {
         const embedder = await getEmbedder();
         const results: Float32Array[] = [];
 
-        for (let i = 0; i < texts.length; i++) {
-            const output = await embedder(texts[i], { pooling: 'mean', normalize: false });
-            results.push(new Float32Array(output.data));
+        for (let offset = 0; offset < texts.length; offset += WORKER_BATCH_SIZE) {
+            const batch = texts.slice(offset, offset + WORKER_BATCH_SIZE);
+            const output = await embedder(batch, { pooling: 'mean', normalize: false });
+            const data = output.data as Float32Array;
+            const dims = output.dims as number[];
+            const batchSize = dims[0] ?? batch.length;
+            const embeddingDim = dims[dims.length - 1] ?? (data.length / Math.max(batchSize, 1));
 
-            // Optional: send progress for each chunk within this batch
-            if (i % 5 === 0) {
-                self.postMessage({ id, type: 'progress', progress: (i + 1) / texts.length });
+            for (let i = 0; i < batchSize; i++) {
+                const start = i * embeddingDim;
+                const end = start + embeddingDim;
+                results.push(new Float32Array(data.slice(start, end)));
             }
+
+            self.postMessage({
+                id,
+                type: 'progress',
+                progress: Math.min((offset + batch.length) / texts.length, 1),
+            });
         }
 
         self.postMessage({ id, type: 'done', results });
     } catch (err: any) {
-        self.postMessage({ id, type: 'error', error: err.message });
+        self.postMessage({ id, type: 'error', error: err?.message ?? String(err) });
     }
 };
