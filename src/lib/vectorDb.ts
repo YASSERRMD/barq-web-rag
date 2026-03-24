@@ -26,7 +26,7 @@ let initPromise: Promise<void> | null = null;
 
 // While barq-vweb stores the vectors, we keep a text mapping for RAG context
 const metadataStore = new Map<number, ChunkMeta & { vector: Float32Array }>();
-let nextId = 0;
+
 
 /**
  * Initialise the WASM compute mesh.
@@ -50,6 +50,7 @@ export async function initDb(): Promise<void> {
             const wasmMod = await import('barq-wasm');
             await (wasmMod as any).default();
 
+            // @ts-ignore
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
             
@@ -90,7 +91,9 @@ export async function insertChunksParallel(
     const texts = metas.map((m) => {
         // Ensure string is well-formed to prevent Rust JSON parse errors (lone surrogates)
         // especially common when parsing raw PDF segments.
+        // @ts-ignore
         if (typeof (m.text as any).toWellFormed === 'function') {
+            // @ts-ignore
             return m.text.toWellFormed();
         }
         // Fallback for older environments: strip unpaired surrogates
@@ -102,30 +105,21 @@ export async function insertChunksParallel(
         // Step 1: Use the mesh's built-in parallel ingestion
         onProgress(0.1); 
         
+        const startIdx = meshStore.vector_count();
         const textsJson = JSON.stringify(texts);
         await meshStore.ingest_texts(textsJson);
         
-        onProgress(0.9); // Nearly done
+        onProgress(0.9); 
 
-        // Step 2: Sync metadata store for retrieval (we need text lookup)
-        // Since ingest_texts inserts into the DB, we need to manually track IDs if we want local metadataStore sync
-        // However, for pure RAG we just need to know how many vectors we have.
-        // We simulate the ID sync here for our Local Map.
-        const currentCount = meshStore.vector_count();
-        const added = texts.length;
-        
-        // Note: ingest_texts usually assigns serial IDs 0, 1, 2...
-        // We keep our metadataStore in sync
+        // Step 2: Sync metadata store for retrieval (we need text lookup and filenames)
+        // IDs are assigned sequentially by the engine (0, 1, 2...)
         for (let i = 0; i < metas.length; i++) {
-            const id = nextId + i;
-            // We store the text. Vector retrieval from WASM is expensive, so we'll 
-            // rely on the DB for search and the metadataStore for content display.
+            const id = startIdx + i;
             metadataStore.set(id, { ...metas[i], vector: new Float32Array(EMBED_DIM) });
         }
         
-        nextId += added;
         onProgress(1.0);
-        console.log(`[vectorDb] Ingestion complete. Store total: ${currentCount}`);
+        console.log(`[vectorDb] Ingestion complete. Store total: ${meshStore.vector_count()}`);
     } catch (err) {
         console.error('[vectorDb] Native ingestion failed:', err);
         throw err;
@@ -155,11 +149,13 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
     return topResults.map((r: any) => {
         const id = r.id;
         const meta = metadataStore.get(id);
+        
+        // Prioritize data returned from barq-vweb (which stores the text/meta)
         return {
             id,
             score: r.score,
-            text: meta?.text || `[Chunk ${id}]`,
-            metadata: meta
+            text: r.text || meta?.text || `[Chunk ${id}]`,
+            metadata: r.metadata || meta
         };
     });
 }
@@ -168,7 +164,6 @@ export async function clearDb(): Promise<void> {
     ensureInit();
     await meshStore.clear();
     metadataStore.clear();
-    nextId = 0;
 }
 
 export function getCount(): number {
