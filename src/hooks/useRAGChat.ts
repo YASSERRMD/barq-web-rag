@@ -46,8 +46,10 @@ export function useRAGChat() {
             if (hasDocuments) {
                 try {
                     const results = await searchSimilar(userText, TOP_K);
+                    console.log(`[RAG] Found ${results.length} chunks. Top score: ${results[0]?.score}`);
+                    
                     sources = results
-                        .filter((r) => r.score > 0.05)
+                        .filter((r) => r.score > 0.005)
                         .map((r) => ({
                             text: r.metadata?.text ?? r.text ?? '',
                             sourceFile: r.metadata?.sourceFile ?? 'unknown',

@@ -47498,13 +47498,15 @@ ${t.text}`).join(`
     const e = fn.useContext(Yy);
     if (!e) throw new Error("useRAGChat must be used within <LLMProvider>");
     const { send: n, messages: t, isGenerating: a, status: s, stop: l, clearChat: c, loadModel: u, tps: d, indexedChunks: f } = e, _ = f > 0, h = fn.useCallback(async (m) => {
+      var _a;
       if (!m.trim() || a) return;
       let g = [], y;
       if (_) try {
-        g = (await vP(m, EP)).filter((I) => I.score > 0.05).map((I) => {
-          var _a, _b2;
+        const S = await vP(m, EP);
+        console.log(`[RAG] Found ${S.length} chunks. Top score: ${(_a = S[0]) == null ? void 0 : _a.score}`), g = S.filter((I) => I.score > 5e-3).map((I) => {
+          var _a2, _b2;
           return {
-            text: ((_a = I.metadata) == null ? void 0 : _a.text) ?? I.text ?? "",
+            text: ((_a2 = I.metadata) == null ? void 0 : _a2.text) ?? I.text ?? "",
             sourceFile: ((_b2 = I.metadata) == null ? void 0 : _b2.sourceFile) ?? "unknown",
             score: I.score
           };
@@ -47585,7 +47587,7 @@ ${t.text}`).join(`
 `);
   }
   async function AP(e) {
-    const n = await gu(() => import("./index-wTo21IXm.js").then((s) => s.i), []), t = await e.arrayBuffer();
+    const n = await gu(() => import("./index-CY4t3eiU.js").then((s) => s.i), []), t = await e.arrayBuffer();
     return (await n.extractRawText({
       arrayBuffer: t
     })).value;
