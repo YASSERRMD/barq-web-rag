@@ -1,14 +1,11 @@
 /**
- * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
+ * vectorDb.ts — Native barq-mesh-web RAG with hybrid retrieval.
  *
- * Hot path:
- * - real MiniLM embeddings in a background worker
- * - insert vectors through barq-mesh-web with explicit IDs
- * - search natively through barq-mesh-web
+ * Keep retrieval inside the native mesh store and use a cheap JS rerank over
+ * the returned candidates so we avoid a second embedding model in the app.
  */
 
-import { initBarqWasm } from './barqWasm';
-import { initEmbedder, initEmbedderWithProgress, embedBatch, embedText, EMBED_DIM } from './embedder';
+const EMBED_DIM = 384;
 
 export interface SearchResult {
     id: number;
@@ -30,57 +27,57 @@ type NativeSearchResult = {
     metadata?: ChunkMeta;
 };
 
-let dbStore: any = null;
+let meshStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
-const INGEST_BATCH_SIZE = 48;
 
 // Local mapping for metadata synchronization.
 const metadataStore = new Map<number, ChunkMeta>();
+const HYBRID_CANDIDATE_COUNT = 16;
+const MIN_RESULT_SCORE = 0.06;
 
 function yieldToUi(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /**
- * Initialise the barq-mesh-web database on demand.
+ * Initialise the native barq-mesh-web engine on demand.
  */
 export async function initDb(onProgress?: (p: number) => void): Promise<void> {
-    if (isInitialised && dbStore) {
+    if (isInitialised && meshStore) {
         onProgress?.(1);
         return;
     }
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        console.log('[vectorDb] Initialising barq-mesh-web database...');
+        console.log('[vectorDb] Initialising native barq-mesh-web...');
         try {
-            await initBarqWasm();
-            const vwebMod = await import('barq-vweb');
-            await (vwebMod as any).default();
+            onProgress?.(0.05);
 
-            const meshMod = await import('barq-mesh-web');
+            const [vwebMod, wasmMod, meshMod] = await Promise.all([
+                import('barq-vweb'),
+                import('barq-wasm'),
+                import('barq-mesh-web'),
+            ]);
+
+            await (vwebMod as any).default();
+            await (wasmMod as any).default();
             await (meshMod as any).default();
 
-            dbStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
-            await dbStore.clear();
+            onProgress?.(0.4);
+
+            meshStore = new meshMod.BarqMeshWeb('rag-session', EMBED_DIM);
+            await meshStore.clear();
             metadataStore.clear();
 
             isInitialised = true;
-            console.log('[vectorDb] barq-mesh-web ready.');
-            if (onProgress) {
-                await initEmbedderWithProgress((progress, info) => {
-                    onProgress(Math.max(0, Math.min(progress, 1)));
-                    if (info?.file) {
-                        console.log(`[vectorDb] embedder warmup ${info.worker}: ${info.file}`);
-                    }
-                });
-            } else {
-                await initEmbedder().catch((e) => {
-                    console.warn('[vectorDb] embedder warmup failed:', e);
-                });
-            }
+            console.log(`[vectorDb] barq-mesh-web ready. Backend: ${meshStore.backend_info()}`);
+            onProgress?.(1);
         } catch (e) {
+            meshStore = null;
+            metadataStore.clear();
+            isInitialised = false;
             console.error('[vectorDb] Init failed:', e);
             throw e;
         } finally {
@@ -92,11 +89,11 @@ export async function initDb(onProgress?: (p: number) => void): Promise<void> {
 }
 
 function ensureInit() {
-    if (!dbStore) throw new Error('vectorDb: call initDb() first');
+    if (!meshStore) throw new Error('vectorDb: call initDb() first');
 }
 
 /**
- * Fast ingestion using worker-backed semantic embeddings and native barq-mesh-web indexing.
+ * High-speed ingestion using barq-mesh-web's native worker pool and embedding layer.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -107,44 +104,22 @@ export async function insertChunks(
     if (metas.length === 0) return getCount();
 
     const texts = metas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
-    console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
+    console.log(`[vectorDb] Ingesting ${texts.length} chunks via barq-mesh-web...`);
 
     try {
-        onProgress(0.05);
+        onProgress(0.1);
 
-        const total = metas.length;
-        let processed = 0;
+        const startIdx = meshStore.count();
+        await meshStore.ingest_texts(texts);
 
-        for (let offset = 0; offset < metas.length; offset += INGEST_BATCH_SIZE) {
-            const batchMetas = metas.slice(offset, offset + INGEST_BATCH_SIZE);
-            const batchTexts = batchMetas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
-            const vectors = await embedBatch(batchTexts);
-
-            const startIdx = dbStore.count();
-            const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
-            const ids = new Uint32Array(vectors.length);
-
-            for (let i = 0; i < vectors.length; i++) {
-                flatVectors.set(vectors[i], i * EMBED_DIM);
-                ids[i] = startIdx + i;
-            }
-
-            await dbStore.upsert_vectors(flatVectors, ids);
-
-            for (let i = 0; i < batchMetas.length; i++) {
-                metadataStore.set(ids[i], batchMetas[i]);
-            }
-
-            processed += batchMetas.length;
-            onProgress(Math.min(0.1 + (processed / total) * 0.85, 0.99));
-
-            if (processed < total) {
-                await yieldToUi();
-            }
+        for (let i = 0; i < metas.length; i++) {
+            metadataStore.set(startIdx + i, metas[i]);
         }
 
+        onProgress(0.9);
+        await yieldToUi();
         onProgress(1.0);
-        console.log(`[vectorDb] barq-mesh-web indexing complete. Total: ${dbStore.count()}`);
+        console.log(`[vectorDb] barq-mesh-web indexing complete. Total: ${meshStore.count()}`);
     } catch (err) {
         console.error('[vectorDb] Ingestion failed:', err);
         throw err;
@@ -153,44 +128,27 @@ export async function insertChunks(
     return getCount();
 }
 
-/**
- * Semantic retrieval using barq-mesh-web's native vector search.
- */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
-    if (!dbStore || metadataStore.size === 0) return [];
+    if (!meshStore || meshStore.count?.() === 0) return [];
 
     console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
-    const queryVec = await embedText(query);
-    const raw = await dbStore.search_vector(queryVec, topK);
-
-    const results = normalizeSearchResults(raw);
-
-    return results
-        .map((r) => {
-            const meta = r.metadata ?? metadataStore.get(r.id);
-            if (!meta) return null;
-
-            return {
-                id: r.id,
-                score: r.score,
-                text: r.text ?? meta.text,
-                metadata: meta,
-            };
-        })
-        .filter(Boolean) as SearchResult[];
+    const queryTokens = tokenize(query);
+    const candidateCount = Math.max(topK * 4, HYBRID_CANDIDATE_COUNT);
+    const hybridRaw = await meshStore.retrieve_hybrid(query, candidateCount);
+    return rerankResults(mapResults(normalizeSearchResults(hybridRaw)), queryTokens, topK);
 }
 
 export async function clearDb(): Promise<void> {
-    if (dbStore) await dbStore.clear();
+    if (meshStore) await meshStore.clear();
     metadataStore.clear();
 }
 
 export function getCount(): number {
-    return metadataStore.size;
+    return meshStore?.count?.() ?? metadataStore.size;
 }
 
 export function getBackendInfo(): string {
-    return `${dbStore?.backend_info?.() ?? 'Inactive'} | worker embeddings`;
+    return `${meshStore?.backend_info?.() ?? 'Inactive'} | barq-mesh-web`;
 }
 
 function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
@@ -204,4 +162,72 @@ function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
         }
     }
     return [];
+}
+
+function mapResults(results: NativeSearchResult[]): SearchResult[] {
+    return results
+        .map((r, idx) => {
+            const id = Number(r.id);
+            const meta = r.metadata ?? (Number.isFinite(id) ? metadataStore.get(id) : undefined);
+            const text = meta?.text ?? r.text ?? '';
+            if (!text) return null;
+
+            return {
+                id: Number.isFinite(id) ? id : idx,
+                score: normalizeScore(r.score),
+                text,
+                metadata: meta ?? {
+                    sourceFile: 'unknown',
+                    chunkIndex: idx,
+                    text,
+                },
+            };
+        })
+        .filter(Boolean) as SearchResult[];
+}
+
+function normalizeScore(score: number): number {
+    if (!Number.isFinite(score)) return 0;
+    return Math.min(score * 60, 0.99);
+}
+
+function rerankResults(results: SearchResult[], queryTokens: string[], topK: number): SearchResult[] {
+    const reranked = results
+        .map((result) => {
+            const lexicalScore = computeLexicalScore(queryTokens, result.text);
+            const blendedScore = result.score * 0.7 + lexicalScore * 0.3;
+
+            return {
+                ...result,
+                score: blendedScore,
+            };
+        })
+        .filter((result) => result.score >= MIN_RESULT_SCORE)
+        .sort((a, b) => b.score - a.score);
+
+    if (reranked.length > 0) {
+        return reranked.slice(0, topK);
+    }
+
+    return results.slice(0, topK);
+}
+
+function tokenize(text: string): string[] {
+    return text
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .filter((token) => token.length >= 3);
+}
+
+function computeLexicalScore(queryTokens: string[], text: string): number {
+    if (queryTokens.length === 0 || !text) return 0;
+
+    const textLower = text.toLowerCase();
+    let matched = 0;
+
+    for (const token of queryTokens) {
+        if (textLower.includes(token)) matched++;
+    }
+
+    return matched / queryTokens.length;
 }

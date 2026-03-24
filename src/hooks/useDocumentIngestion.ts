@@ -1,5 +1,5 @@
 /**
- * useDocumentIngestion.ts — File → parse → chunk → fast embed → barq-mesh-web store.
+ * useDocumentIngestion.ts — File → parse → chunk → native barq-mesh-web store.
  */
 
 import { useState, useCallback, useContext, useEffect } from 'react';
@@ -50,8 +50,9 @@ export function useDocumentIngestion() {
                 return { state: 'initialising', progress: nextProgress };
             });
         });
-        // backendInfo shows the mesh store and the semantic embedding worker.
-        setBackendInfo(`${getBackendInfo()} | MiniLM worker`);
+        // backendInfo shows the native mesh backend.
+        setBackendInfo(getBackendInfo());
+        setChunkCount(getCount());
         setDbReady(true);
     }, [dbReady]);
 
