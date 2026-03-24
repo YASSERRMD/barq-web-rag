@@ -8,7 +8,7 @@
  */
 
 import { initBarqWasm } from './barqWasm';
-import { initEmbedder, embedBatch, embedText, EMBED_DIM } from './embedder';
+import { initEmbedder, initEmbedderWithProgress, embedBatch, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -45,8 +45,11 @@ function yieldToUi(): Promise<void> {
 /**
  * Initialise the barq-mesh-web database on demand.
  */
-export async function initDb(): Promise<void> {
-    if (isInitialised && dbStore) return;
+export async function initDb(onProgress?: (p: number) => void): Promise<void> {
+    if (isInitialised && dbStore) {
+        onProgress?.(1);
+        return;
+    }
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
@@ -65,9 +68,18 @@ export async function initDb(): Promise<void> {
 
             isInitialised = true;
             console.log('[vectorDb] barq-mesh-web ready.');
-            initEmbedder().catch((e) => {
-                console.warn('[vectorDb] embedder warmup failed:', e);
-            });
+            if (onProgress) {
+                await initEmbedderWithProgress((progress, info) => {
+                    onProgress(Math.max(0, Math.min(progress, 1)));
+                    if (info?.file) {
+                        console.log(`[vectorDb] embedder warmup ${info.worker}: ${info.file}`);
+                    }
+                });
+            } else {
+                await initEmbedder().catch((e) => {
+                    console.warn('[vectorDb] embedder warmup failed:', e);
+                });
+            }
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
             throw e;
@@ -98,9 +110,7 @@ export async function insertChunks(
     console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
 
     try {
-        onProgress(0.02);
-        await initEmbedder();
-        onProgress(0.08);
+        onProgress(0.05);
 
         const total = metas.length;
         let processed = 0;

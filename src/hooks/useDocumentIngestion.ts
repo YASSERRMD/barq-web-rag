@@ -10,7 +10,7 @@ import { LLMContext } from './LLMContext';
 
 export type IngestionStatus =
     | { state: 'idle' }
-    | { state: 'initialising' }
+    | { state: 'initialising'; progress?: number }
     | { state: 'parsing'; fileName: string }
     | { state: 'embedding'; fileName: string; progress: number }
     | { state: 'done' }
@@ -42,8 +42,14 @@ export function useDocumentIngestion() {
 
     const ensureDb = useCallback(async () => {
         if (dbReady) return;
-        setStatus({ state: 'initialising' });
-        await initDb();
+        setStatus({ state: 'initialising', progress: 0 });
+        await initDb((progress) => {
+            setStatus((prev) => {
+                if (prev.state !== 'initialising') return prev;
+                const nextProgress = Math.max(prev.progress ?? 0, Math.round(progress * 100));
+                return { state: 'initialising', progress: nextProgress };
+            });
+        });
         // backendInfo shows the mesh store and the semantic embedding worker.
         setBackendInfo(`${getBackendInfo()} | MiniLM worker`);
         setDbReady(true);

@@ -13,6 +13,11 @@ const MODEL_WORKER_URL = new URL('../workers/embed.worker.ts', import.meta.url);
 const MAX_BATCH_SIZE = 16;
 const WORKER_COUNT = getWorkerCount();
 
+export type EmbedProgressHandler = (
+    progress: number,
+    info?: { phase: 'warmup' | 'batch'; worker: string; file?: string }
+) => void;
+
 type WorkerResponse =
     | { id: number; type: 'ready' }
     | { id: number; type: 'done'; results: Float32Array[] }
@@ -22,6 +27,7 @@ type WorkerResponse =
 type PendingJob = {
     resolve: (vectors: Float32Array[]) => void;
     reject: (error: unknown) => void;
+    onProgress?: EmbedProgressHandler;
 };
 
 class EmbedWorkerClient {
@@ -45,9 +51,25 @@ class EmbedWorkerClient {
             const msg = event.data;
 
             if (msg.type === 'progress') {
-                const percent = Math.round((msg.progress ?? 0) * 100);
-                const prefix = msg.file ? ` ${msg.file}` : '';
-                console.log(`[embedder:${this.label}]${prefix} ${percent}%`);
+                const pending = this.pending.get(msg.id);
+
+                if (msg.id === 0) {
+                    warmupProgressCallback?.(msg.progress ?? 0, {
+                        phase: 'warmup',
+                        worker: this.label,
+                        file: msg.file,
+                    });
+                } else if (pending?.onProgress) {
+                    pending.onProgress(msg.progress ?? 0, {
+                        phase: 'batch',
+                        worker: this.label,
+                        file: msg.file,
+                    });
+                } else {
+                    const percent = Math.round((msg.progress ?? 0) * 100);
+                    const prefix = msg.file ? ` ${msg.file}` : '';
+                    console.log(`[embedder:${this.label}]${prefix} ${percent}%`);
+                }
                 return;
             }
 
@@ -89,12 +111,12 @@ class EmbedWorkerClient {
         await this.readyPromise;
     }
 
-    run(texts: string[]): Promise<Float32Array[]> {
+    run(texts: string[], onProgress?: EmbedProgressHandler): Promise<Float32Array[]> {
         const job = async () => {
             await this.ready();
             return new Promise<Float32Array[]>((resolve, reject) => {
                 const id = this.nextMessageId++;
-                this.pending.set(id, { resolve, reject });
+                this.pending.set(id, { resolve, reject, onProgress });
                 this.worker.postMessage({ id, texts });
             });
         };
@@ -118,6 +140,7 @@ class EmbedWorkerClient {
 let pool: EmbedWorkerClient[] | null = null;
 let initPromise: Promise<void> | null = null;
 let ready = false;
+let warmupProgressCallback: EmbedProgressHandler | null = null;
 
 function getWorkerCount(): number {
     if (typeof navigator === 'undefined') return 1;
@@ -187,6 +210,22 @@ function pickWorker(index: number): EmbedWorkerClient {
 
 export async function initEmbedder(): Promise<void> {
     await ensurePool();
+}
+
+export async function initEmbedderWithProgress(onProgress?: EmbedProgressHandler): Promise<void> {
+    if (ready && pool) {
+        onProgress?.(1, { phase: 'warmup', worker: 'all', file: 'ready' });
+        return;
+    }
+
+    warmupProgressCallback = onProgress ?? null;
+
+    try {
+        await ensurePool();
+        onProgress?.(1, { phase: 'warmup', worker: 'all', file: 'ready' });
+    } finally {
+        warmupProgressCallback = null;
+    }
 }
 
 /**
