@@ -5,7 +5,8 @@
  * ingestion and retrieval stay aligned with the IDs stored in metadata.
  */
 
-import { EMBED_DIM } from './embedder';
+import { initBarqWasm, cosineSimilarity } from './barqWasm';
+import { initEmbedder, embedText, EMBED_DIM } from './embedder';
 
 export interface SearchResult {
     id: number;
@@ -26,6 +27,7 @@ let initPromise: Promise<void> | null = null;
 
 // Local mapping for metadata synchronization
 const metadataStore = new Map<number, ChunkMeta>();
+const rerankVectorCache = new Map<number, Float32Array>();
 
 /**
  * Initialise the stable AiMesh engine on demand.
@@ -37,10 +39,9 @@ export async function initDb(): Promise<void> {
     initPromise = (async () => {
         console.log('[vectorDb] Initialising high-speed parallel mesh...');
         try {
+            await initBarqWasm();
             const vwebMod = await import('barq-vweb');
             await (vwebMod as any).default();
-            const wasmMod = await import('barq-wasm');
-            await (wasmMod as any).default();
             // @ts-ignore
             const mod = await import('barq-mesh-web');
             await (mod as any).default();
@@ -49,9 +50,11 @@ export async function initDb(): Promise<void> {
             const numWorkers = 4;
             // @ts-ignore
             meshStore = mod.AiMesh.create(numWorkers, 'rag-session', EMBED_DIM);
+            await meshStore.clear();
             
             isInitialised = true;
             console.log('[vectorDb] Mesh ready with', numWorkers, 'workers.');
+            initEmbedder().catch(() => {});
         } catch (e) {
             console.error('[vectorDb] Init failed:', e);
             throw e;
@@ -94,6 +97,7 @@ export async function insertChunks(
         for (let i = 0; i < metas.length; i++) {
             const id = startIdx + i;
             metadataStore.set(id, metas[i]);
+            rerankVectorCache.delete(id);
         }
         
         onProgress(1.0);
@@ -107,35 +111,47 @@ export async function insertChunks(
 
 /**
  * Neural Search using the native engine's high-precision retrieval.
+ * Hybrid search produces candidates; SIMD cosine reranking picks the final chunks.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     if (!meshStore || metadataStore.size === 0) return [];
 
     console.log(`[vectorDb] Parallel retrieval: "${query}"`);
-    const resultsJson = await meshStore.retrieve_hybrid(query, topK);
+    const queryVec = await embedText(query);
+    const candidateCount = Math.max(topK * 6, 30);
+    const resultsJson = await meshStore.retrieve_hybrid(query, candidateCount);
     
     let results: Array<{ id: number; score: number }> = [];
     try { results = JSON.parse(resultsJson); } catch { results = []; }
 
-    return results.map((r: any) => {
+    const reranked: SearchResult[] = [];
+    for (const r of results) {
         const meta = metadataStore.get(r.id);
-        if (!meta) return null;
+        if (!meta) continue;
 
-        // remap RRF score (0.016 range) to display score (normalized)
-        const displayScore = Math.min(r.score * 60, 0.99);
+        let candidateVec = rerankVectorCache.get(r.id);
+        if (!candidateVec) {
+            candidateVec = await embedText(meta.text);
+            rerankVectorCache.set(r.id, candidateVec);
+        }
 
-        return { 
-            id: r.id, 
-            score: displayScore, 
-            text: meta.text, 
-            metadata: meta 
-        };
-    }).filter(Boolean) as SearchResult[];
+        reranked.push({
+            id: r.id,
+            score: cosineSimilarity(queryVec, candidateVec),
+            text: meta.text,
+            metadata: meta,
+        });
+    }
+
+    return reranked
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
 }
 
 export async function clearDb(): Promise<void> {
     if (meshStore) await meshStore.clear();
     metadataStore.clear();
+    rerankVectorCache.clear();
 }
 
 export function getCount(): number {
