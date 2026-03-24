@@ -1,11 +1,11 @@
 /**
- * vectorDb.ts — Native barq-mesh-web RAG with dense-first retrieval.
+ * vectorDb.ts — Native barq-mesh-web RAG with hybrid retrieval.
  *
- * Ingestion stays inside barq-mesh-web. Retrieval uses native vector search as
- * the fast path and only falls back to hybrid text search if dense search fails.
+ * Keep retrieval inside the native mesh store and use a cheap JS rerank over
+ * the returned candidates so we avoid a second embedding model in the app.
  */
 
-import { EMBED_DIM, embedText, warmQueryEmbedder } from './embedder';
+const EMBED_DIM = 384;
 
 export interface SearchResult {
     id: number;
@@ -33,9 +33,8 @@ let initPromise: Promise<void> | null = null;
 
 // Local mapping for metadata synchronization.
 const metadataStore = new Map<number, ChunkMeta>();
-const DENSE_CANDIDATE_COUNT = 12;
-const MIN_DENSE_SCORE = 0.18;
-const MIN_LEXICAL_SCORE = 0.08;
+const HYBRID_CANDIDATE_COUNT = 16;
+const MIN_RESULT_SCORE = 0.06;
 
 function yieldToUi(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
@@ -74,9 +73,6 @@ export async function initDb(onProgress?: (p: number) => void): Promise<void> {
 
             isInitialised = true;
             console.log(`[vectorDb] barq-mesh-web ready. Backend: ${meshStore.backend_info()}`);
-            void warmQueryEmbedder().catch((error) => {
-                console.warn('[vectorDb] Query embedder warmup failed:', error);
-            });
             onProgress?.(1);
         } catch (e) {
             meshStore = null;
@@ -137,18 +133,9 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
 
     console.log(`[vectorDb] barq-mesh-web retrieval: "${query}"`);
     const queryTokens = tokenize(query);
-
-    try {
-        const queryVector = await embedText(query);
-        const raw = await meshStore.search_vector(queryVector, Math.max(topK, DENSE_CANDIDATE_COUNT));
-        const denseResults = rerankResults(mapResults(normalizeSearchResults(raw), 'dense'), queryTokens, topK);
-        if (denseResults.length > 0) return denseResults;
-    } catch (error) {
-        console.warn('[vectorDb] Dense retrieval failed, falling back to hybrid search:', error);
-    }
-
-    const hybridRaw = await meshStore.retrieve_hybrid(query, topK);
-    return rerankResults(mapResults(normalizeSearchResults(hybridRaw), 'hybrid'), queryTokens, topK);
+    const candidateCount = Math.max(topK * 4, HYBRID_CANDIDATE_COUNT);
+    const hybridRaw = await meshStore.retrieve_hybrid(query, candidateCount);
+    return rerankResults(mapResults(normalizeSearchResults(hybridRaw)), queryTokens, topK);
 }
 
 export async function clearDb(): Promise<void> {
@@ -177,7 +164,7 @@ function normalizeSearchResults(raw: unknown): NativeSearchResult[] {
     return [];
 }
 
-function mapResults(results: NativeSearchResult[], mode: 'dense' | 'hybrid'): SearchResult[] {
+function mapResults(results: NativeSearchResult[]): SearchResult[] {
     return results
         .map((r, idx) => {
             const id = Number(r.id);
@@ -187,7 +174,7 @@ function mapResults(results: NativeSearchResult[], mode: 'dense' | 'hybrid'): Se
 
             return {
                 id: Number.isFinite(id) ? id : idx,
-                score: normalizeScore(r.score, mode),
+                score: normalizeScore(r.score),
                 text,
                 metadata: meta ?? {
                     sourceFile: 'unknown',
@@ -199,33 +186,30 @@ function mapResults(results: NativeSearchResult[], mode: 'dense' | 'hybrid'): Se
         .filter(Boolean) as SearchResult[];
 }
 
-function normalizeScore(score: number, mode: 'dense' | 'hybrid'): number {
+function normalizeScore(score: number): number {
     if (!Number.isFinite(score)) return 0;
-    if (mode === 'hybrid') return Math.min(score * 60, 0.99);
-    return Math.max(0, Math.min(score, 0.99));
+    return Math.min(score * 60, 0.99);
 }
 
 function rerankResults(results: SearchResult[], queryTokens: string[], topK: number): SearchResult[] {
     const reranked = results
         .map((result) => {
             const lexicalScore = computeLexicalScore(queryTokens, result.text);
-            const blendedScore = Math.max(
-                result.score * 0.82 + lexicalScore * 0.18,
-                lexicalScore * 0.75,
-            );
+            const blendedScore = result.score * 0.7 + lexicalScore * 0.3;
 
             return {
                 ...result,
                 score: blendedScore,
             };
         })
-        .filter((result) => {
-            const lexicalScore = computeLexicalScore(queryTokens, result.text);
-            return result.score >= MIN_DENSE_SCORE || lexicalScore >= MIN_LEXICAL_SCORE;
-        })
+        .filter((result) => result.score >= MIN_RESULT_SCORE)
         .sort((a, b) => b.score - a.score);
 
-    return reranked.slice(0, topK);
+    if (reranked.length > 0) {
+        return reranked.slice(0, topK);
+    }
+
+    return results.slice(0, topK);
 }
 
 function tokenize(text: string): string[] {

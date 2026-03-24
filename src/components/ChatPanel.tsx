@@ -101,7 +101,7 @@ function SourceChips({ sources }: { sources: SourceChunk[] }) {
                             }}
                         >
                             <div style={{ color: 'var(--accent-2)', fontWeight: 600, marginBottom: '0.2rem', fontSize: '0.7rem' }}>
-                                {s.sourceFile} · relevance {s.score.toFixed(2)}
+                                {s.sourceFile}
                             </div>
                             <div style={{ color: 'var(--text-muted)', lineHeight: 1.6 }}>
                                 {s.text.length > 200 ? s.text.slice(0, 200) + '…' : s.text}

@@ -8,9 +8,8 @@ import { LLMContext } from './LLMContext';
 import { searchSimilar } from '../lib/vectorDb';
 import type { ChatMessage, SourceChunk } from './LLMContext';
 
-const TOP_K = 4;
-const MIN_CONTEXT_SCORE = 0.2;
-const MAX_CONTEXT_CHARS = 4000;
+const TOP_K = 5;
+const MAX_CONTEXT_CHARS = 5000;
 
 function buildSystemPrompt(chunks: SourceChunk[]): string {
     if (chunks.length === 0) {
@@ -50,7 +49,6 @@ export function useRAGChat() {
                     console.log(`[RAG] Found ${results.length} chunks. Top score: ${results[0]?.score}`);
                     
                     sources = results
-                        .filter((r) => r.score >= MIN_CONTEXT_SCORE)
                         .map((r) => ({
                             text: r.metadata?.text ?? r.text ?? '',
                             sourceFile: r.metadata?.sourceFile ?? 'unknown',
