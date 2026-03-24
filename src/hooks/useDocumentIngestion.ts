@@ -1,5 +1,5 @@
 /**
- * useDocumentIngestion.ts — File → parse → chunk → MiniLM embed → barq-wasm normalize → barq-mesh-web store.
+ * useDocumentIngestion.ts — File → parse → chunk → fast embed → barq-mesh-web store.
  */
 
 import { useState, useCallback, useContext, useEffect } from 'react';
@@ -44,8 +44,8 @@ export function useDocumentIngestion() {
         if (dbReady) return;
         setStatus({ state: 'initialising' });
         await initDb();
-        // backendInfo shows the mesh store, SIMD compute, and MiniLM embedder
-        setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD | MiniLM-L6-v2`);
+        // backendInfo shows the mesh store and SIMD compute path.
+        setBackendInfo(`${getBackendInfo()} | barq-wasm SIMD`);
         setDbReady(true);
     }, [dbReady]);
 
@@ -94,7 +94,7 @@ export function useDocumentIngestion() {
 
                 // Step 3: Batch embed and insert through the mesh backend.
                 setStatus({ state: 'embedding', fileName: file.name, progress: 0 });
-                console.log(`[Ingestion] Inserting ${chunks.length} chunks via barq-mesh-web...`);
+                console.log(`[Ingestion] Indexing ${chunks.length} chunks via barq-mesh-web...`);
                 await insertChunks(chunks, (progress) => {
                     setStatus({
                         state: 'embedding',

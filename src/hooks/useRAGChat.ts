@@ -1,5 +1,5 @@
 /**
- * useRAGChat.ts — Hook that wraps useLLM with barq-vweb retrieval.
+ * useRAGChat.ts — Hook that wraps useLLM with barq-mesh-web retrieval.
  * On each send(): retrieves top-k chunks, builds system prompt, calls LLM.
  */
 
@@ -9,7 +9,6 @@ import { searchSimilar } from '../lib/vectorDb';
 import type { ChatMessage, SourceChunk } from './LLMContext';
 
 const TOP_K = 5;
-const MIN_CONTEXT_SCORE = 0.25;
 const MAX_CONTEXT_CHARS = 5000;
 
 function buildSystemPrompt(chunks: SourceChunk[]): string {
@@ -50,7 +49,6 @@ export function useRAGChat() {
                     console.log(`[RAG] Found ${results.length} chunks. Top score: ${results[0]?.score}`);
                     
                     sources = results
-                        .filter((r) => r.score >= MIN_CONTEXT_SCORE)
                         .map((r) => ({
                             text: r.metadata?.text ?? r.text ?? '',
                             sourceFile: r.metadata?.sourceFile ?? 'unknown',

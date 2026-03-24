@@ -1,35 +1,88 @@
 /**
- * embedder.ts — Real text embeddings using Xenova/all-MiniLM-L6-v2 (384-dim).
- * Vectors are L2-normalized using barq-wasm SIMD for fast cosine search.
+ * embedder.ts - Lightweight deterministic embeddings used by barq-mesh-web.
+ *
+ * This mirrors the native stub embedder used in the mesh/vweb WASM layer so
+ * ingestion and retrieval stay fast and consistent without a transformer model
+ * on the hot path.
  */
 
-import { pipeline, env } from '@huggingface/transformers';
 import { initBarqWasm, normalizeVector } from './barqWasm';
 
-// Use cached ONNX session for speed; disable local model check
-env.allowLocalModels = false;
-
-const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 export const EMBED_DIM = 384;
-const EMBED_BATCH_SIZE = 32;
+const MAX_SEQ_LEN = 128;
 
-let embedPipeline: any = null;
+const CLS_ID = 101;
+const SEP_ID = 102;
+const UNK_ID = 100;
+const PAD_ID = 0;
+
+const VOCAB = new Map<string, number>();
+
+let embedReady = false;
 let initPromise: Promise<void> | null = null;
 
+function buildStubVocab(): void {
+    if (VOCAB.size > 0) return;
+
+    for (const [i, c] of Array.from('abcdefghijklmnopqrstuvwxyz').entries()) {
+        VOCAB.set(c, i + 1000);
+    }
+
+    VOCAB.set('[CLS]', CLS_ID);
+    VOCAB.set('[SEP]', SEP_ID);
+    VOCAB.set('[UNK]', UNK_ID);
+    VOCAB.set('[PAD]', PAD_ID);
+}
+
+function tokenize(text: string): number[] {
+    const ids = [CLS_ID];
+    const words = text.split(/\s+/);
+
+    for (const word of words) {
+        if (!word) continue;
+
+        const lower = word.toLowerCase();
+        const direct = VOCAB.get(lower);
+
+        if (direct != null) {
+            ids.push(direct);
+        } else {
+            for (const ch of lower.slice(0, 10)) {
+                ids.push(VOCAB.get(ch) ?? UNK_ID);
+            }
+        }
+
+        if (ids.length >= MAX_SEQ_LEN - 1) break;
+    }
+
+    ids.push(SEP_ID);
+    while (ids.length < MAX_SEQ_LEN) ids.push(PAD_ID);
+    return ids;
+}
+
+function embedDeterministic(text: string): Float32Array {
+    const safeText = (text as any).toWellFormed?.() ?? text;
+    const tokenIds = tokenize(safeText);
+    const vec = new Float32Array(EMBED_DIM);
+
+    for (let i = 0; i < tokenIds.length; i++) {
+        const tid = tokenIds[i];
+        const pos = (tid + i) % EMBED_DIM;
+        vec[pos] += 1.0;
+    }
+
+    return normalizeVector(vec);
+}
+
 export async function initEmbedder(): Promise<void> {
-    if (embedPipeline) return;
+    if (embedReady) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        // Ensure barq-wasm is ready for vector normalization
         await initBarqWasm();
-
-        console.log('[embedder] Loading MiniLM-L6-v2…');
-        embedPipeline = await pipeline('feature-extraction', MODEL_ID, {
-            dtype: 'q8',            // 8-bit quantized — smaller download, faster inference
-            device: 'wasm',         // use ONNX WASM backend (not WebGPU, reserved for LLM)
-        });
-        console.log('[embedder] MiniLM-L6-v2 ready');
+        buildStubVocab();
+        embedReady = true;
+        console.log('[embedder] Deterministic mesh embedder ready');
     })();
 
     return initPromise;
@@ -39,46 +92,8 @@ export async function initEmbedder(): Promise<void> {
  * Embed a single text string. Returns a unit-normalized Float32Array (384-dim).
  */
 export async function embedText(text: string): Promise<Float32Array> {
-    if (!embedPipeline) await initEmbedder();
-
-    const output = await embedPipeline(text, { pooling: 'mean', normalize: false });
-    const raw = new Float32Array(output.data);
-
-    // Use barq-wasm SIMD normalization
-    return normalizeVector(raw);
-}
-
-function tensorToEmbeddings(output: any, batchSize: number): Float32Array[] {
-    const dims: number[] = Array.isArray(output?.dims) ? output.dims : [];
-    const rawData = output?.data;
-
-    if (!dims.length || rawData == null) {
-        throw new Error('embedder: unexpected tensor output from feature-extraction pipeline');
-    }
-
-    const data =
-        rawData instanceof Float32Array
-            ? rawData
-            : Float32Array.from(rawData as ArrayLike<number>);
-    const rowSize = dims[dims.length - 1] ?? EMBED_DIM;
-    const rows = dims[0] ?? batchSize;
-
-    if (rows !== batchSize) {
-        throw new Error(`embedder: batch size mismatch (${rows} !== ${batchSize})`);
-    }
-
-    if (rowSize !== EMBED_DIM) {
-        throw new Error(`embedder: expected ${EMBED_DIM}-dim embeddings, got ${rowSize}`);
-    }
-
-    const embeddings: Float32Array[] = new Array(batchSize);
-    for (let i = 0; i < batchSize; i++) {
-        const start = i * rowSize;
-        const end = start + rowSize;
-        embeddings[i] = normalizeVector(data.slice(start, end));
-    }
-
-    return embeddings;
+    if (!embedReady) await initEmbedder();
+    return embedDeterministic(text);
 }
 
 /**
@@ -86,17 +101,16 @@ function tensorToEmbeddings(output: any, batchSize: number): Float32Array[] {
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
-    if (!embedPipeline) await initEmbedder();
+    if (!embedReady) await initEmbedder();
 
-    const results: Float32Array[] = [];
-    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
-        const chunk = texts.slice(i, i + EMBED_BATCH_SIZE);
-        const output = await embedPipeline(chunk, { pooling: 'mean', normalize: false });
-        results.push(...tensorToEmbeddings(output, chunk.length));
+    const results: Float32Array[] = new Array(texts.length);
+    for (let i = 0; i < texts.length; i++) {
+        results[i] = embedDeterministic(texts[i]);
     }
+
     return results;
 }
 
 export function isEmbedderReady(): boolean {
-    return embedPipeline !== null;
+    return embedReady;
 }

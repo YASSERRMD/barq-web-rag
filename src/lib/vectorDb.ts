@@ -2,9 +2,9 @@
  * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
  *
  * Hot path:
- * - batch embed in JS
+ * - deterministic batch embed in JS
  * - insert vectors through barq-mesh-web with explicit IDs
- * - search vectors natively through barq-mesh-web
+ * - search natively through barq-mesh-web
  */
 
 import { initBarqWasm } from './barqWasm';
@@ -33,9 +33,14 @@ type NativeSearchResult = {
 let dbStore: any = null;
 let isInitialised = false;
 let initPromise: Promise<void> | null = null;
+const INGEST_BATCH_SIZE = 48;
 
 // Local mapping for metadata synchronization.
 const metadataStore = new Map<number, ChunkMeta>();
+
+function yieldToUi(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 /**
  * Initialise the barq-mesh-web database on demand.
@@ -77,7 +82,7 @@ function ensureInit() {
 }
 
 /**
- * Fast ingestion using precomputed JS embeddings and native barq-mesh-web indexing.
+ * Fast ingestion using deterministic JS embeddings and native barq-mesh-web indexing.
  */
 export async function insertChunks(
     metas: ChunkMeta[],
@@ -91,24 +96,37 @@ export async function insertChunks(
     console.log(`[vectorDb] Ingesting ${texts.length} chunks into barq-mesh-web...`);
 
     try {
-        onProgress(0.1);
-        const vectors = await embedBatch(texts);
-        onProgress(0.35);
+        onProgress(0.05);
 
-        const startIdx = dbStore.count();
-        const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
-        const ids = new Uint32Array(vectors.length);
+        const total = metas.length;
+        let processed = 0;
 
-        for (let i = 0; i < vectors.length; i++) {
-            flatVectors.set(vectors[i], i * EMBED_DIM);
-            ids[i] = startIdx + i;
-        }
+        for (let offset = 0; offset < metas.length; offset += INGEST_BATCH_SIZE) {
+            const batchMetas = metas.slice(offset, offset + INGEST_BATCH_SIZE);
+            const batchTexts = batchMetas.map((m) => (m.text as any).toWellFormed?.() ?? m.text);
+            const vectors = await embedBatch(batchTexts);
 
-        await dbStore.upsert_vectors(flatVectors, ids);
-        onProgress(0.9);
+            const startIdx = dbStore.count();
+            const flatVectors = new Float32Array(vectors.length * EMBED_DIM);
+            const ids = new Uint32Array(vectors.length);
 
-        for (let i = 0; i < metas.length; i++) {
-            metadataStore.set(ids[i], metas[i]);
+            for (let i = 0; i < vectors.length; i++) {
+                flatVectors.set(vectors[i], i * EMBED_DIM);
+                ids[i] = startIdx + i;
+            }
+
+            await dbStore.upsert_vectors(flatVectors, ids);
+
+            for (let i = 0; i < batchMetas.length; i++) {
+                metadataStore.set(ids[i], batchMetas[i]);
+            }
+
+            processed += batchMetas.length;
+            onProgress(Math.min(0.1 + (processed / total) * 0.85, 0.99));
+
+            if (processed < total) {
+                await yieldToUi();
+            }
         }
 
         onProgress(1.0);
@@ -122,7 +140,7 @@ export async function insertChunks(
 }
 
 /**
- * Fast native vector search using barq-mesh-web's HNSW index.
+ * Fast native retrieval using barq-mesh-web's native hybrid search.
  */
 export async function searchSimilar(query: string, topK = 5): Promise<SearchResult[]> {
     if (!dbStore || metadataStore.size === 0) return [];
@@ -131,11 +149,11 @@ export async function searchSimilar(query: string, topK = 5): Promise<SearchResu
     let raw: unknown;
 
     try {
+        raw = await dbStore.retrieve_hybrid(query, topK);
+    } catch (err) {
+        console.warn('[vectorDb] Native hybrid retrieval failed, falling back to vector search:', err);
         const queryVec = await embedText(query);
         raw = await dbStore.search_vector(queryVec, topK);
-    } catch (err) {
-        console.warn('[vectorDb] Native vector search failed, falling back to hybrid retrieval:', err);
-        raw = await dbStore.retrieve_hybrid(query, topK);
     }
 
     const results = normalizeSearchResults(raw);

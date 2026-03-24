@@ -142,7 +142,7 @@ export function UploadPanel({ ingestion, onClearAll }: UploadPanelProps) {
                         <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                             {status.state === 'initialising' && 'Initialising vector DB…'}
                             {status.state === 'parsing' && `Parsing ${(status as any).fileName}…`}
-                            {status.state === 'embedding' && `Embedding ${(status as any).progress ?? 0}%…`}
+                            {status.state === 'embedding' && `Indexing ${(status as any).progress ?? 0}%…`}
                         </p>
                         {status.state === 'embedding' && (
                             <div className="progress-track w-full" style={{ maxWidth: '160px', marginTop: '0.5rem' }}>
