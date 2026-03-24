@@ -4,7 +4,7 @@
  * Modified to support RAG: `send()` accepts a pre-built messages array.
  */
 
-import { useRef, useState, useCallback, type ReactNode } from 'react';
+import { useRef, useState, useCallback, useMemo, useEffect, useContext, type ReactNode } from 'react';
 import {
     pipeline,
     TextStreamer,
@@ -211,21 +211,21 @@ export function LLMProvider({ children }: { children: ReactNode }) {
         setMessages([]);
     }, []);
 
+    const ctxValue = useMemo(() => ({
+        status,
+        messages,
+        isGenerating,
+        tps,
+        loadModel,
+        send,
+        stop,
+        clearChat,
+        indexedChunks,
+        setIndexedChunks,
+    }), [status, messages, isGenerating, tps, loadModel, send, stop, clearChat, indexedChunks]);
+
     return (
-        <LLMContext.Provider
-            value={{
-                status,
-                messages,
-                isGenerating,
-                tps,
-                loadModel,
-                send,
-                stop,
-                clearChat,
-                indexedChunks,
-                setIndexedChunks,
-            }}
-        >
+        <LLMContext.Provider value={ctxValue}>
             {children}
         </LLMContext.Provider>
     );

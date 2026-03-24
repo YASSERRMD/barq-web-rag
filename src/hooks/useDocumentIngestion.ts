@@ -35,7 +35,9 @@ export function useDocumentIngestion() {
 
     // Sync local count to global context so Chat can detect RAG documents
     useEffect(() => {
-        if (ctx) ctx.setIndexedChunks(chunkCount);
+        if (ctx && ctx.indexedChunks !== chunkCount) {
+            ctx.setIndexedChunks(chunkCount);
+        }
     }, [chunkCount, ctx]);
 
     const ensureDb = useCallback(async () => {
