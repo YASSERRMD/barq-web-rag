@@ -20,7 +20,19 @@ async function getEmbedder() {
 }
 
 self.onmessage = async (e: MessageEvent) => {
-    const { id, texts } = e.data as { id: string; texts: string[] };
+    const { id, type, texts } = e.data as { id: string; type?: string; texts?: string[] };
+
+    if (type === 'init') {
+        try {
+            await getEmbedder();
+            self.postMessage({ id, type: 'ready' });
+        } catch (err: any) {
+            self.postMessage({ id, type: 'error', error: err.message });
+        }
+        return;
+    }
+
+    if (!texts) return;
 
     try {
         const embedder = await getEmbedder();
@@ -30,8 +42,7 @@ self.onmessage = async (e: MessageEvent) => {
             const output = await embedder(texts[i], { pooling: 'mean', normalize: false });
             results.push(new Float32Array(output.data));
 
-            // Optional: send progress for each chunk within this batch
-            if (i % 5 === 0) {
+            if (i % 5 === 0 || i === texts.length - 1) {
                 self.postMessage({ id, type: 'progress', progress: (i + 1) / texts.length });
             }
         }
