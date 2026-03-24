@@ -2,7 +2,7 @@
  * vectorDb.ts - High-speed RAG backed by barq-mesh-web.
  *
  * Hot path:
- * - real MiniLM embeddings in a background worker
+ * - real MiniLM embeddings on the main thread with batching
  * - insert vectors through barq-mesh-web with explicit IDs
  * - search natively through barq-mesh-web
  */
@@ -190,7 +190,7 @@ export function getCount(): number {
 }
 
 export function getBackendInfo(): string {
-    return `${dbStore?.backend_info?.() ?? 'Inactive'} | worker embeddings`;
+    return `${dbStore?.backend_info?.() ?? 'Inactive'} | MiniLM embeddings`;
 }
 
 function normalizeSearchResults(raw: unknown): NativeSearchResult[] {

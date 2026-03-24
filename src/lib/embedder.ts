@@ -1,260 +1,121 @@
 /**
- * embedder.ts - Worker-backed semantic embeddings for barq-mesh-web.
+ * embedder.ts - Main-thread MiniLM embeddings for barq-mesh-web.
  *
- * The app keeps barq-mesh-web as the vector store/search layer, but the actual
- * embeddings come from the real MiniLM model running in a background worker.
- * That keeps retrieval semantically correct without putting model inference on
- * the UI thread.
+ * This keeps the semantic embedding model compatible with static hosting
+ * environments like Hugging Face Pages, while still batching requests so
+ * ingestion remains reasonably fast.
  */
 
-export const EMBED_DIM = 384;
+import { pipeline, env } from '@huggingface/transformers';
 
-const MODEL_WORKER_URL = new URL('../workers/embed.worker.ts', import.meta.url);
-const MAX_BATCH_SIZE = 16;
-const WORKER_COUNT = getWorkerCount();
+export const EMBED_DIM = 384;
+const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
+const EMBED_BATCH_SIZE = 16;
+
+// Match the LLM provider's ONNX runtime setup so static deployments use a
+// predictable WASM backend and shared cache path.
+env.allowLocalModels = false;
+if (env.backends.onnx.wasm) {
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
+}
 
 export type EmbedProgressHandler = (
     progress: number,
     info?: { phase: 'warmup' | 'batch'; worker: string; file?: string }
 ) => void;
 
-type WorkerResponse =
-    | { id: number; type: 'ready' }
-    | { id: number; type: 'done'; results: Float32Array[] }
-    | { id: number; type: 'progress'; progress: number; file?: string }
-    | { id: number; type: 'error'; error: string };
+type FeatureExtractionPipeline = any;
 
-type PendingJob = {
-    resolve: (vectors: Float32Array[]) => void;
-    reject: (error: unknown) => void;
-    onProgress?: EmbedProgressHandler;
-};
-
-class EmbedWorkerClient {
-    private readonly worker: Worker;
-    private readonly pending = new Map<number, PendingJob>();
-    private readonly readyPromise: Promise<void>;
-    private readyResolve: (() => void) | null = null;
-    private readyReject: ((error: unknown) => void) | null = null;
-    private nextMessageId = 1;
-    private tail: Promise<void> = Promise.resolve();
-
-    constructor(private readonly label: string) {
-        this.worker = new Worker(MODEL_WORKER_URL, { type: 'module' });
-
-        this.readyPromise = new Promise<void>((resolve, reject) => {
-            this.readyResolve = resolve;
-            this.readyReject = reject;
-        });
-
-        this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-            const msg = event.data;
-
-            if (msg.type === 'progress') {
-                const pending = this.pending.get(msg.id);
-
-                if (msg.id === 0) {
-                    warmupProgressCallback?.(msg.progress ?? 0, {
-                        phase: 'warmup',
-                        worker: this.label,
-                        file: msg.file,
-                    });
-                } else if (pending?.onProgress) {
-                    pending.onProgress(msg.progress ?? 0, {
-                        phase: 'batch',
-                        worker: this.label,
-                        file: msg.file,
-                    });
-                } else {
-                    const percent = Math.round((msg.progress ?? 0) * 100);
-                    const prefix = msg.file ? ` ${msg.file}` : '';
-                    console.log(`[embedder:${this.label}]${prefix} ${percent}%`);
-                }
-                return;
-            }
-
-            if (msg.type === 'error') {
-                const error = new Error(msg.error);
-                if (msg.id === 0) {
-                    this.readyReject?.(error);
-                    this.readyResolve = null;
-                    this.readyReject = null;
-                    return;
-                }
-            }
-
-            if (msg.type === 'ready') {
-                this.readyResolve?.();
-                this.readyResolve = null;
-                this.readyReject = null;
-                return;
-            }
-
-            const pending = this.pending.get(msg.id);
-            if (!pending) return;
-            this.pending.delete(msg.id);
-
-            if (msg.type === 'done') {
-                pending.resolve(msg.results);
-                return;
-            }
-
-            pending.reject(new Error(msg.error));
-        };
-
-        this.worker.onerror = (event: ErrorEvent) => {
-            const error = event.error ?? new Error(event.message || `Embed worker ${this.label} failed`);
-            this.readyReject?.(error);
-            this.readyResolve = null;
-            this.readyReject = null;
-
-            for (const pending of this.pending.values()) {
-                pending.reject(error);
-            }
-            this.pending.clear();
-        };
-
-        this.worker.postMessage({ id: 0, type: 'init' });
-    }
-
-    async ready(): Promise<void> {
-        await this.readyPromise;
-    }
-
-    run(texts: string[], onProgress?: EmbedProgressHandler): Promise<Float32Array[]> {
-        const job = async () => {
-            await this.ready();
-            return new Promise<Float32Array[]>((resolve, reject) => {
-                const id = this.nextMessageId++;
-                this.pending.set(id, { resolve, reject, onProgress });
-                this.worker.postMessage({ id, texts });
-            });
-        };
-
-        const scheduled = this.tail.then(job, job);
-        this.tail = scheduled.then(
-            () => undefined,
-            () => undefined,
-        );
-        return scheduled;
-    }
-
-    dispose(): void {
-        this.worker.terminate();
-        this.pending.clear();
-        this.readyResolve = null;
-        this.readyReject = null;
-    }
-}
-
-let pool: EmbedWorkerClient[] | null = null;
+let embedPipeline: FeatureExtractionPipeline | null = null;
 let initPromise: Promise<void> | null = null;
-let ready = false;
-let warmupProgressCallback: EmbedProgressHandler | null = null;
-let desiredWorkerCount = WORKER_COUNT;
+let embedReady = false;
 
-function getWorkerCount(): number {
-    if (typeof navigator === 'undefined') return 1;
-    const cores = navigator.hardwareConcurrency ?? 4;
-    if (cores >= 4) return 2;
-    return 1;
+function toWellFormedText(text: string): string {
+    return (text as any).toWellFormed?.() ?? text;
 }
 
-function buildPool(): EmbedWorkerClient[] {
-    const count = desiredWorkerCount;
-    const workers: EmbedWorkerClient[] = [];
+function toVectors(output: any): Float32Array[] {
+    const data = output?.data as Float32Array;
+    const dims = output?.dims as number[] | undefined;
 
-    for (let i = 0; i < count; i++) {
-        workers.push(new EmbedWorkerClient(`w${i + 1}`));
+    if (!data || !dims || dims.length === 0) return [];
+
+    const batchSize = dims[0] ?? 1;
+    const embeddingDim = dims[dims.length - 1] ?? EMBED_DIM;
+    const results: Float32Array[] = new Array(batchSize);
+
+    for (let i = 0; i < batchSize; i++) {
+        const start = i * embeddingDim;
+        const end = start + embeddingDim;
+        results[i] = new Float32Array(data.slice(start, end));
     }
 
-    return workers;
+    return results;
 }
 
-async function ensurePool(): Promise<void> {
-    if (ready && pool) return;
-    if (initPromise) return initPromise;
+async function ensurePipeline(onProgress?: EmbedProgressHandler): Promise<void> {
+    if (embedReady && embedPipeline) {
+        onProgress?.(1, { phase: 'warmup', worker: 'main', file: 'ready' });
+        return;
+    }
+
+    if (initPromise) {
+        await initPromise;
+        onProgress?.(1, { phase: 'warmup', worker: 'main', file: 'ready' });
+        return;
+    }
 
     initPromise = (async () => {
-        const tryCounts = desiredWorkerCount > 1 ? [desiredWorkerCount, 1] : [1];
-
-        let lastError: unknown = null;
-
-        for (const count of tryCounts) {
-            desiredWorkerCount = count;
-            pool = buildPool();
-
-            try {
-                await Promise.all(pool.map((worker) => worker.ready()));
-                ready = true;
-                console.log(`[embedder] MiniLM worker pool ready (${pool.length} worker${pool.length === 1 ? '' : 's'})`);
-                return;
-            } catch (error) {
-                lastError = error;
-                console.warn(`[embedder] Worker pool warmup failed at size ${count}; retrying smaller pool`, error);
-                if (pool) {
-                    for (const worker of pool) {
-                        worker.dispose();
-                    }
-                }
-                pool = null;
-                ready = false;
+        const progress_callback = onProgress
+            ? (p: any) => {
+                if (p?.status !== 'progress') return;
+                onProgress(Math.max(0, Math.min(p.progress ?? 0, 1)), {
+                    phase: 'warmup',
+                    worker: 'main',
+                    file: p.file ?? MODEL_ID,
+                });
             }
-        }
+            : undefined;
 
-        throw lastError ?? new Error('embedder: failed to initialise worker pool');
+        embedPipeline = await pipeline('feature-extraction', MODEL_ID, {
+            dtype: 'q8',
+            device: 'wasm',
+            progress_callback,
+        });
+
+        embedReady = true;
+        onProgress?.(1, { phase: 'warmup', worker: 'main', file: 'ready' });
+        console.log('[embedder] MiniLM embeddings ready');
     })();
 
     try {
         await initPromise;
     } catch (error) {
-        pool = null;
-        ready = false;
+        embedPipeline = null;
+        embedReady = false;
         throw error;
     } finally {
         initPromise = null;
     }
 }
 
-function toWellFormedText(text: string): string {
-    return (text as any).toWellFormed?.() ?? text;
-}
-
-function splitTexts(texts: string[]): string[][] {
-    if (texts.length <= MAX_BATCH_SIZE) return [texts];
+function splitIntoBatches(texts: string[]): string[][] {
+    if (texts.length <= EMBED_BATCH_SIZE) return [texts];
 
     const batches: string[][] = [];
-    for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) {
-        batches.push(texts.slice(i, i + MAX_BATCH_SIZE));
+    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
+        batches.push(texts.slice(i, i + EMBED_BATCH_SIZE));
     }
     return batches;
 }
 
-function pickWorker(index: number): EmbedWorkerClient {
-    if (!pool || pool.length === 0) {
-        throw new Error('embedder: call initEmbedder() first');
-    }
-    return pool[index % pool.length];
-}
-
 export async function initEmbedder(): Promise<void> {
-    await ensurePool();
+    await ensurePipeline();
 }
 
 export async function initEmbedderWithProgress(onProgress?: EmbedProgressHandler): Promise<void> {
-    if (ready && pool) {
-        onProgress?.(1, { phase: 'warmup', worker: 'all', file: 'ready' });
-        return;
-    }
-
-    warmupProgressCallback = onProgress ?? null;
-
-    try {
-        await ensurePool();
-        onProgress?.(1, { phase: 'warmup', worker: 'all', file: 'ready' });
-    } finally {
-        warmupProgressCallback = null;
-    }
+    await ensurePipeline(onProgress);
 }
 
 /**
@@ -268,40 +129,39 @@ export async function embedText(text: string): Promise<Float32Array> {
 }
 
 /**
- * Embed a batch of texts using the worker pool. Batches are split into small
- * chunks so the underlying transformer can process them efficiently.
+ * Embed a batch of texts using the MiniLM pipeline.
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
-    await ensurePool();
-    if (!pool || pool.length === 0) return [];
+    await ensurePipeline();
+    if (!embedPipeline) return [];
 
-    const safeTexts = texts.map(toWellFormedText);
-    const subBatches = splitTexts(safeTexts);
+    const batches = splitIntoBatches(texts.map(toWellFormedText));
+    const results: Float32Array[] = [];
 
-    const jobs = subBatches.map((batch, index) => pickWorker(index).run(batch));
-    const results = await Promise.all(jobs);
+    for (const batch of batches) {
+        const output = await embedPipeline(batch, {
+            pooling: 'mean',
+            normalize: true,
+        });
+        results.push(...toVectors(output));
 
-    const flattened: Float32Array[] = [];
-    for (const batchResults of results) {
-        flattened.push(...batchResults);
+        // Let the browser paint between batches so indexing stays responsive.
+        await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
-    return flattened;
+    return results;
 }
 
 export function isEmbedderReady(): boolean {
-    return ready;
+    return embedReady;
 }
 
 export async function disposeEmbedder(): Promise<void> {
-    if (pool) {
-        for (const worker of pool) {
-            worker.dispose();
-        }
+    if (embedPipeline?.dispose) {
+        await embedPipeline.dispose();
     }
-    pool = null;
-    ready = false;
+    embedPipeline = null;
+    embedReady = false;
     initPromise = null;
-    desiredWorkerCount = WORKER_COUNT;
 }

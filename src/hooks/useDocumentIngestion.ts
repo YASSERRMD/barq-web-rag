@@ -50,8 +50,8 @@ export function useDocumentIngestion() {
                 return { state: 'initialising', progress: nextProgress };
             });
         });
-        // backendInfo shows the mesh store and the semantic embedding worker.
-        setBackendInfo(`${getBackendInfo()} | MiniLM worker`);
+        // backendInfo shows the mesh store and the semantic embedding path.
+        setBackendInfo(getBackendInfo());
         setDbReady(true);
     }, [dbReady]);
 
