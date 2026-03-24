@@ -18,7 +18,6 @@ import {
 env.allowLocalModels = false;
 if (env.backends.onnx.wasm) {
     env.backends.onnx.wasm.numThreads = 1;
-    env.backends.onnx.wasm.proxy = true; // Use proxy for better TPS isolation
     env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/';
 }
 
